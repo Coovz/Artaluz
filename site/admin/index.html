@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Back office | Artaluz</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Marcellus&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/config.js"></script>
+<style>
+  .tabs { display: flex; gap: 6px; margin: 24px 0; }
+  table { width: 100%; border-collapse: collapse; background: var(--paper); border-radius: var(--radius); overflow: hidden; font-size: .92rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { background: #F7F6F3; font-weight: 600; }
+  td img { width: 56px; min-width: 56px; height: 56px; object-fit: contain; }
+  select { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: #fff; }
+  .tagrow { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 8px; }
+  .admin-grid { display: grid; grid-template-columns: 420px 1fr; gap: 32px; align-items: start; }
+  @media (max-width: 960px) { .admin-grid { grid-template-columns: 1fr; } .tagrow { grid-template-columns: 1fr; } }
+  .tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main class="wrap" style="padding-bottom:64px">
+  <h1 style="margin-top:32px">Back office</h1>
+
+  <form id="login" class="panel" style="max-width:420px;margin-top:24px">
+    <label class="field"><span>Mot de passe administrateur</span><input type="password" id="pw" autocomplete="current-password" required></label>
+    <button class="btn">Se connecter</button><div id="login-err"></div>
+  </form>
+
+  <div id="app" hidden>
+    <div class="tabs" role="tablist">
+      <button class="chip" role="tab" data-tab="visuels" aria-pressed="true">Visuels</button>
+      <button class="chip" role="tab" data-tab="commandes" aria-pressed="false">Commandes</button>
+    </div>
+
+    <section data-panel="visuels" class="admin-grid">
+      <form id="upload" class="panel">
+        <h3 style="margin-bottom:14px">Ajouter un visuel</h3>
+        <label class="field"><span>Fichier source (JPEG, PNG, TIFF, 1 000 px minimum)</span><input type="file" name="file" accept="image/jpeg,image/png,image/tiff,image/webp" required></label>
+        <label class="field"><span>Titre</span><input name="title" required></label>
+        <label class="field"><span>Description (facultatif)</span><textarea name="description" rows="3"></textarea></label>
+        <span style="font-size:.88rem;display:block;margin-bottom:4px">Classement (une ligne par rattachement)</span>
+        <div id="tagrows"></div>
+        <button type="button" class="btn ghost" id="addtag" style="margin-bottom:12px">Ajouter un rattachement</button>
+        <label class="check"><input type="checkbox" name="featured" value="true"> Mettre en avant sur l'accueil</label>
+        <div id="up-msg" aria-live="polite"></div>
+        <button class="btn gold block" id="up-btn">Mettre en ligne</button>
+      </form>
+      <div class="tablewrap"><table><thead><tr><th></th><th>Visuel</th><th>Classement</th><th>Taille</th><th>Statut</th></tr></thead><tbody id="arts"></tbody></table></div>
+    </section>
+
+    <section data-panel="commandes" hidden class="tablewrap">
+      <table><thead><tr><th>Commande</th><th>Client</th><th>Total</th><th>Payée le</th><th>Atelier</th><th>Statut</th><th></th></tr></thead><tbody id="orders"></tbody></table>
+    </section>
+  </div>
+</main>
+<script type="module">
+import { api, esc, eur, catalog } from '/assets/app.js';
+const KEY = 'artaluz-admin';
+let token = null;
+try { token = sessionStorage.getItem(KEY); } catch {}
+const adm = (path, opts = {}) => api(path, { ...opts, headers: { 'X-Admin-Token': token, ...(opts.headers || {}) } });
+
+const STATUS = { pending: 'En attente de paiement', paid: 'Payée', in_production: 'En production', shipped: 'Expédiée', delivered: 'Livrée', cancelled: 'Annulée', refunded: 'Remboursée' };
+const ART_STATUS = { en_attente: 'En attente', accepte: 'En ligne', a_corriger: 'À corriger', refuse: 'Refusé', retire: 'Retiré' };
+
+document.getElementById('login').addEventListener('submit', async e => {
+  e.preventDefault(); token = document.getElementById('pw').value;
+  try { await adm('/api/admin/orders'); try { sessionStorage.setItem(KEY, token); } catch {} start(); }
+  catch (err) { document.getElementById('login-err').innerHTML = `<div class="alert err">${esc(err.message)}</div>`; }
+});
+if (token) adm('/api/admin/orders').then(start).catch(() => { token = null; });
+
+document.querySelector('.tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]'); if (!b) return;
+  document.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== b.dataset.tab);
+});
+
+let cat;
+async function start() {
+  document.getElementById('login').hidden = true; document.getElementById('app').hidden = false;
+  cat = await catalog();
+  addTagRow(); loadArts(); loadOrders();
+}
+
+function addTagRow() {
+  const row = document.createElement('div'); row.className = 'tagrow';
+  row.innerHTML = `<select data-k="religion" required aria-label="Religion">${cat.religions.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+    <select data-k="occasion" aria-label="Fête ou événement"></select><select data-k="figure" aria-label="Figure"></select>
+    <button type="button" class="btn ghost" aria-label="Retirer ce rattachement">×</button>`;
+  const fill = () => {
+    const r = row.querySelector('[data-k=religion]').value;
+    row.querySelector('[data-k=occasion]').innerHTML = `<option value="">Fête : aucune</option>` + cat.occasions.filter(o => o.religion_id === r).map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('');
+    row.querySelector('[data-k=figure]').innerHTML = `<option value="">Figure : aucune</option>` + cat.figures.filter(f => f.religion_id === r).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  };
+  row.querySelector('[data-k=religion]').addEventListener('change', fill);
+  row.querySelector('button').addEventListener('click', () => { if (document.querySelectorAll('.tagrow').length > 1) row.remove(); });
+  fill(); document.getElementById('tagrows').append(row);
+}
+document.getElementById('addtag').addEventListener('click', addTagRow);
+
+document.getElementById('upload').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, fd = new FormData(f), msg = document.getElementById('up-msg'), btn = document.getElementById('up-btn');
+  const tags = [...document.querySelectorAll('.tagrow')].map(r => Object.fromEntries([...r.querySelectorAll('select')].map(s => [s.dataset.k, s.value || null])));
+  fd.set('tags', JSON.stringify(tags)); fd.set('featured', f.featured.checked ? 'true' : 'false');
+  btn.disabled = true; btn.textContent = 'Envoi en cours…'; msg.innerHTML = '';
+  try {
+    const out = await adm('/api/admin/artworks', { method: 'POST', body: fd });
+    const total = cat.products.length;
+    msg.innerHTML = `<div class="alert ok">« ${esc(f.title.value)} » est en ligne (${out.width} × ${out.height} px). Imprimable sur ${out.printable.length} formats sur ${total}.</div>`;
+    f.reset(); document.getElementById('tagrows').innerHTML = ''; addTagRow(); loadArts();
+  } catch (err) { msg.innerHTML = `<div class="alert err">${esc(err.message)}</div>`; }
+  btn.disabled = false; btn.textContent = 'Mettre en ligne';
+});
+
+async function loadArts() {
+  const rows = await adm('/api/admin/artworks');
+  document.getElementById('arts').innerHTML = rows.length ? rows.map(a => `<tr>
+    <td><img src="${esc(a.preview)}" alt=""></td>
+    <td><a href="/visuel/${encodeURIComponent(a.slug)}" target="_blank" rel="noopener"><b>${esc(a.title)}</b></a><br><span class="muted">${esc(a.artist)}</span></td>
+    <td>${esc(a.tags || '')}</td><td>${a.width_px} × ${a.height_px}</td>
+    <td><select data-art="${esc(a.slug)}" aria-label="Statut">${Object.entries(ART_STATUS).map(([k, v]) => `<option value="${k}"${k === a.status ? ' selected' : ''}>${v}</option>`).join('')}</select></td></tr>`).join('')
+    : `<tr><td colspan="5" class="muted">Aucun visuel pour l'instant. Ajoutez le premier avec le formulaire.</td></tr>`;
+}
+document.getElementById('arts').addEventListener('change', async e => {
+  const s = e.target.closest('[data-art]'); if (!s) return;
+  await adm(`/api/admin/artworks/${encodeURIComponent(s.dataset.art)}`, { method: 'PATCH', body: JSON.stringify({ status: s.value }) });
+});
+
+async function loadOrders() {
+  const rows = await adm('/api/admin/orders');
+  document.getElementById('orders').innerHTML = rows.length ? rows.map(o => `<tr>
+    <td><b>${esc(o.order_number)}</b><br><span class="muted">${esc(o.invoice_number || '')}</span></td>
+    <td>${esc(o.customer_name)}<br><span class="muted">${esc(o.customer_email)}</span></td>
+    <td>${eur(o.amount_total)}</td>
+    <td>${o.paid_at ? new Date(o.paid_at).toLocaleString('fr-FR') : '—'}</td>
+    <td>${o.production_email_sent_at ? 'Envoyée' : (o.paid_at ? '<b style="color:var(--danger)">Non envoyée</b>' : '—')}</td>
+    <td>${o.status === 'pending' ? STATUS.pending : `<select data-ord="${esc(o.order_number)}" aria-label="Statut">${Object.entries(STATUS).filter(([k]) => k !== 'pending').map(([k, v]) => `<option value="${k}"${k === o.status ? ' selected' : ''}>${v}</option>`).join('')}</select>`}</td>
+    <td>${o.paid_at ? `<button class="btn ghost" data-resend="${esc(o.order_number)}">Renvoyer à l'atelier</button>` : ''}</td></tr>`).join('')
+    : `<tr><td colspan="7" class="muted">Aucune commande pour l'instant.</td></tr>`;
+}
+document.getElementById('orders').addEventListener('change', async e => {
+  const s = e.target.closest('[data-ord]'); if (!s) return;
+  await adm(`/api/admin/orders/${encodeURIComponent(s.dataset.ord)}`, { method: 'PATCH', body: JSON.stringify({ status: s.value }) });
+});
+document.getElementById('orders').addEventListener('click', async e => {
+  const b = e.target.closest('[data-resend]'); if (!b) return;
+  b.disabled = true; b.textContent = 'Envoi…';
+  try { await adm(`/api/admin/orders/${encodeURIComponent(b.dataset.resend)}/production`, { method: 'POST' }); b.textContent = 'Envoyé'; loadOrders(); }
+  catch (err) { b.textContent = 'Échec'; b.title = err.message; b.disabled = false; }
+});
+</script>
+</body>
+</html>

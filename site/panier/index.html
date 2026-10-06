@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panier | Artaluz</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Marcellus&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/config.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <h1 style="margin-top:32px">Votre panier</h1>
+  <div id="notice"></div>
+  <div class="cart" id="cart">
+    <div id="lines"></div>
+    <form class="panel" id="checkout" novalidate>
+      <div class="totals" id="totals"></div>
+      <div class="field" style="margin-top:14px"><span>Code promo</span>
+        <div style="display:flex;gap:8px"><input id="promo" autocomplete="off"><button type="button" class="btn ghost" id="apply">Appliquer</button></div></div>
+      <h3 style="margin:22px 0 12px">Livraison</h3>
+      <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
+      <label class="field"><span>Nom complet</span><input name="name" autocomplete="name" required></label>
+      <label class="field"><span>Adresse</span><input name="address1" autocomplete="address-line1" required></label>
+      <label class="field"><span>Complément d'adresse (facultatif)</span><input name="address2" autocomplete="address-line2"></label>
+      <div class="row2">
+        <label class="field"><span>Code postal</span><input name="postalCode" autocomplete="postal-code" required></label>
+        <label class="field"><span>Ville</span><input name="city" autocomplete="address-level2" required></label>
+      </div>
+      <label class="field"><span>Pays</span><select name="country" autocomplete="country">
+        <option value="FR">France</option><option value="BE">Belgique</option><option value="LU">Luxembourg</option>
+        <option value="MC">Monaco</option><option value="CH">Suisse</option><option value="DE">Allemagne</option>
+        <option value="ES">Espagne</option><option value="IT">Italie</option><option value="NL">Pays-Bas</option>
+        <option value="PT">Portugal</option><option value="AT">Autriche</option></select></label>
+      <div id="err" aria-live="assertive"></div>
+      <button class="btn gold block" id="pay" type="submit">Payer la commande</button>
+      <p class="note">Paiement sécurisé par Stripe. Vous recevez la confirmation par email.</p>
+    </form>
+  </div>
+</main>
+<script type="module">
+import { chrome, api, esc, eur, cart, catalog } from '/assets/app.js';
+chrome();
+let promoCode = null, priced = null;
+
+if (new URLSearchParams(location.search).get('status') === 'annule') {
+  document.getElementById('notice').innerHTML = `<div class="alert err">Le paiement a été annulé. Votre panier est conservé.</div>`;
+}
+
+async function refresh() {
+  const items = cart.read();
+  if (!items.length) {
+    document.getElementById('cart').innerHTML = `<div class="empty-state" style="grid-column:1/-1">Votre panier est vide. <a href="/">Découvrir les collections</a></div>`;
+    return;
+  }
+  try {
+    priced = await api('/api/cart/price', { method: 'POST', body: JSON.stringify({ items, promoCode }) });
+  } catch (e) {
+    if (promoCode) { promoCode = null; showErr(e.message); return refresh(); }
+    showErr(`${e.message}. Retirez l'article concerné pour continuer.`);
+    priced = null;
+  }
+  const cat = await catalog();
+  document.getElementById('lines').innerHTML = items.map((it, i) => {
+    const p = priced?.lines[i];
+    const prod = cat.products.find(x => x.ref === it.productRef);
+    return `<div class="line">
+      <img src="${esc(it.preview)}" alt="">
+      <div><a href="/visuel/${encodeURIComponent(it.artworkSlug)}"><b>${esc(it.title)}</b></a><br>
+        <span class="muted">${esc(prod ? `${prod.variant} ${prod.format_label.replace(' (plus grand côté)', '')}` : it.productRef)}${p?.finishes.length ? ' — ' + esc(p.finishes.map(f => f.name).join(', ')) : ''}</span><br>
+        <span>Quantité : ${it.quantity}</span> · <button class="rm" data-i="${i}">Retirer</button></div>
+      <div><b>${p ? eur(p.totalTtc) : ''}</b></div></div>`;
+  }).join('');
+  if (!priced) { document.getElementById('totals').innerHTML = ''; document.getElementById('pay').disabled = true; return; }
+  document.getElementById('pay').disabled = false;
+  const pct = Math.min(100, Math.round(100 * (1 - priced.missingForFreeShipping / (catFree(cat)))));
+  document.getElementById('totals').innerHTML = `
+    <div><span>Sous-total</span><span>${eur(priced.subtotal)}</span></div>
+    ${priced.discount ? `<div><span>Remise ${esc(priced.promoCode)}</span><span>−${eur(priced.discount)}</span></div>` : ''}
+    <div><span>Livraison</span><span>${priced.shipping ? eur(priced.shipping) : 'Offerte'}</span></div>
+    ${priced.missingForFreeShipping ? `<div class="muted" style="display:block;font-size:.88rem">Plus que ${eur(priced.missingForFreeShipping)} pour la livraison offerte</div><div class="progress"><span style="width:${pct}%"></span></div>` : ''}
+    <div class="grand"><span>Total TTC</span><span>${eur(priced.total)}</span></div>`;
+}
+const catFree = cat => cat.freeShippingThreshold || 7500;
+function showErr(msg) { document.getElementById('err').innerHTML = `<div class="alert err">${esc(msg)}</div>`; }
+
+document.getElementById('lines').addEventListener('click', e => {
+  const b = e.target.closest('.rm'); if (!b) return;
+  const items = cart.read(); items.splice(Number(b.dataset.i), 1); cart.write(items);
+  document.getElementById('err').innerHTML = ''; refresh();
+});
+document.getElementById('apply').addEventListener('click', () => {
+  promoCode = document.getElementById('promo').value.trim() || null;
+  document.getElementById('err').innerHTML = ''; refresh();
+});
+document.getElementById('checkout').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target;
+  if (!form.checkValidity()) { form.reportValidity(); return; }
+  const customer = Object.fromEntries(new FormData(form));
+  const btn = document.getElementById('pay'); btn.disabled = true; btn.textContent = 'Redirection vers le paiement…';
+  try {
+    const { checkoutUrl } = await api('/api/checkout', { method: 'POST',
+      body: JSON.stringify({ items: cart.read().map(({ artworkSlug, productRef, quantity, finishIds }) => ({ artworkSlug, productRef, quantity, finishIds })), promoCode, customer }) });
+    location.href = checkoutUrl;
+  } catch (err) {
+    showErr(err.message); btn.disabled = false; btn.textContent = 'Payer la commande';
+  }
+});
+refresh();
+</script>
+</body>
+</html>

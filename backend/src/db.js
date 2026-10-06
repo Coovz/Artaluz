@@ -1,5 +1,8 @@
 // Accès Postgres (Supabase) via le pooler — source de vérité des commandes.
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Les colonnes DATE restent des chaînes 'AAAA-MM-JJ' (pas de décalage de fuseau horaire)
+types.setTypeParser(1082, v => v);
 const config = require('./config');
 
 if (!config.databaseUrl) console.warn('[db] DATABASE_URL manquante — l\'API ne pourra pas fonctionner');

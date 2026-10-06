@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artaluz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Marcellus&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/config.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <div class="product" id="product">
+    <div class="stage"><div class="print" id="print"><img id="img" alt=""></div><div class="dims" id="dims"></div></div>
+    <div>
+      <nav class="crumbs muted" id="crumbs" style="font-size:.9rem"></nav>
+      <h1 id="title" style="margin-top:8px">&nbsp;</h1>
+      <div class="muted" id="artist"></div>
+      <div class="tags" id="tags"></div>
+      <p id="desc"></p>
+
+      <div class="step"><span class="label" id="l-support">Support</span><div class="options" id="supports" role="group" aria-labelledby="l-support"></div></div>
+      <div class="step" id="step-variant"><span class="label" id="l-variant">Qualité</span><div class="options" id="variants" role="group" aria-labelledby="l-variant"></div></div>
+      <div class="step"><span class="label" id="l-format">Format</span><div class="options" id="formats" role="group" aria-labelledby="l-format"></div></div>
+      <div class="step" id="step-finish"><span class="label">Finitions</span><div id="finishes"></div></div>
+      <div class="step">
+        <label class="label" for="qty">Quantité</label>
+        <div class="qty"><button type="button" data-d="-1" aria-label="Retirer un exemplaire">−</button><input id="qty" type="number" min="1" value="1" inputmode="numeric"><button type="button" data-d="1" aria-label="Ajouter un exemplaire">+</button></div>
+        <div class="note" id="minnote" hidden></div>
+      </div>
+      <div class="buybar">
+        <div><div class="price" id="price">—</div><div class="muted" id="unit"></div></div>
+        <button class="btn gold" id="add">Ajouter au panier</button>
+      </div>
+      <div id="added" aria-live="polite"></div>
+      <p class="note">Imprimé à la commande dans notre atelier en France. Livraison offerte dès 75 € d'achat.</p>
+    </div>
+  </div>
+</main>
+<script type="module">
+import { chrome, catalog, api, esc, eur, cart, RELIGION_COLORS, SUPPORT_LABELS } from '/assets/app.js';
+const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || new URLSearchParams(location.search).get('s') || '');
+
+(async () => {
+  let art, cat;
+  try { [art, cat] = await Promise.all([api(`/api/artworks/${encodeURIComponent(slug)}`), catalog()]); }
+  catch (e) { chrome(); document.getElementById('product').innerHTML = `<div class="empty-state" style="grid-column:1/-1">Ce visuel n'est plus disponible. <a href="/">Retour à l'accueil</a></div>`; return; }
+  const mainRel = art.tags[0]?.religion_id;
+  chrome(mainRel);
+  if (mainRel) document.documentElement.style.setProperty('--c', RELIGION_COLORS[mainRel]);
+  document.title = `${art.title} — ${art.tags[0]?.religion || ''} | Artaluz`;
+  const img = document.getElementById('img');
+  img.src = art.preview; img.alt = art.title;
+  document.getElementById('title').textContent = art.title;
+  document.getElementById('artist').textContent = art.is_internal ? 'Création Artaluz' : `Par ${art.artist}`;
+  document.getElementById('desc').textContent = art.description || '';
+  document.getElementById('crumbs').innerHTML = `<a href="/">Accueil</a> / ` + (mainRel ? `<a href="/religion/${mainRel}">${esc(art.tags[0].religion)}</a>` : '');
+  document.getElementById('tags').innerHTML = art.tags.map(t => [
+    t.occasion && `<a class="tag" href="/religion/${t.religion_id}?fete=${t.occasion_id}">${esc(t.occasion)}</a>`,
+    t.figure && `<a class="tag" href="/religion/${t.religion_id}?figure=${t.figure_id}">${esc(t.figure)}</a>`,
+  ].filter(Boolean).join('')).join('');
+
+  const landscape = art.width_px >= art.height_px;
+  const products = cat.products.filter(p => art.printableRefs.includes(p.ref) && art.supports.includes(p.support));
+  const supports = Object.keys(SUPPORT_LABELS).filter(s => products.some(p => p.support === s));
+  const sel = { support: supports.includes('alu') ? 'alu' : supports[0], variant: null, ref: null, finishes: new Set() };
+
+  const optBtn = (val, label, sub, pressed, attr) =>
+    `<button type="button" class="opt" data-${attr}="${esc(val)}" aria-pressed="${pressed}">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</button>`;
+  const fmtLabel = p => {
+    if (p.support === 'sticker' || p.support === 'magnet') return p.format_label.replace(' (plus grand côté)', '');
+    const [a, b] = [Number(p.width_cm), Number(p.height_cm)];
+    if (p.format_label.startsWith('A')) return p.format_label;
+    const [w, h] = landscape ? [Math.max(a, b), Math.min(a, b)] : [Math.min(a, b), Math.max(a, b)];
+    return `${w} × ${h} cm`;
+  };
+  const minPrice = list => Math.min(...list.map(p => p.price_ttc * p.min_qty));
+
+  function render() {
+    const ofSupport = products.filter(p => p.support === sel.support);
+    const variants = [...new Set(ofSupport.map(p => p.variant))];
+    if (!variants.includes(sel.variant)) sel.variant = variants[0];
+    const ofVariant = ofSupport.filter(p => p.variant === sel.variant);
+    if (!ofVariant.some(p => p.ref === sel.ref)) sel.ref = ofVariant[Math.min(2, ofVariant.length - 1)]?.ref;
+    const prod = products.find(p => p.ref === sel.ref);
+
+    document.getElementById('supports').innerHTML = supports.map(s =>
+      optBtn(s, SUPPORT_LABELS[s], `dès ${eur(minPrice(products.filter(p => p.support === s)))}`, s === sel.support, 'support')).join('');
+    document.getElementById('step-variant').hidden = variants.length < 2;
+    document.getElementById('variants').innerHTML = variants.map(v =>
+      optBtn(v, v.replace(/^(Bâche qualité |Sticker |Magnet )/, '').replace(/^./, c => c.toUpperCase()), '', v === sel.variant, 'variant')).join('');
+    document.getElementById('formats').innerHTML = ofVariant.map(p =>
+      optBtn(p.ref, fmtLabel(p), eur(p.price_ttc), p.ref === sel.ref, 'ref')).join('');
+
+    const fins = cat.finishes.filter(f => f.support === sel.support && (!f.product_ref || f.product_ref === sel.ref));
+    for (const id of [...sel.finishes]) if (!fins.some(f => f.id === id)) sel.finishes.delete(id);
+    document.getElementById('step-finish').hidden = !fins.length;
+    document.getElementById('finishes').innerHTML = fins.map(f => `<label class="check">
+      <input type="checkbox" value="${f.id}" ${sel.finishes.has(f.id) ? 'checked' : ''} data-name="${esc(f.name)}">
+      <span>${esc(f.name)}${f.detail && f.detail !== f.name ? ` <span class="muted">(${esc(f.detail)})</span>` : ''} — ${eur(f.price_ttc)}</span></label>`).join('');
+
+    const qtyEl = document.getElementById('qty');
+    qtyEl.min = prod.min_qty;
+    if (Number(qtyEl.value) < prod.min_qty) qtyEl.value = prod.min_qty;
+    const mn = document.getElementById('minnote');
+    mn.hidden = prod.min_qty <= 1; mn.textContent = `Vendu par ${prod.min_qty} minimum.`;
+    update();
+  }
+
+  function update() {
+    const prod = products.find(p => p.ref === sel.ref);
+    const finTtc = cat.finishes.filter(f => sel.finishes.has(f.id)).reduce((s, f) => s + f.price_ttc, 0);
+    const qty = Math.max(prod.min_qty, Number(document.getElementById('qty').value) || prod.min_qty);
+    const unit = prod.price_ttc + finTtc;
+    document.getElementById('price').textContent = eur(unit * qty);
+    document.getElementById('unit').textContent = qty > 1 ? `${eur(unit)} l'unité` : '';
+    document.getElementById('dims').textContent = `${SUPPORT_LABELS[prod.support]} · ${fmtLabel(prod)}`;
+    const frame = cat.finishes.find(f => sel.finishes.has(f.id) && /cadre/i.test(f.name));
+    const pr = document.getElementById('print');
+    pr.className = 'print' + (frame ? (/noir/i.test(frame.name) ? ' framed-noir' : ' framed-blanc') : '');
+    // Aperçu au ratio exact du format : la zone visible est celle qui sera imprimée
+    const artR = art.width_px / art.height_px;
+    let r = artR;
+    if (prod.support !== 'sticker' && prod.support !== 'magnet') {
+      const a = Number(prod.width_cm), b = Number(prod.height_cm);
+      r = landscape ? Math.max(a, b) / Math.min(a, b) : Math.min(a, b) / Math.max(a, b);
+    }
+    pr.style.setProperty('--r', r);
+    document.getElementById('dims').textContent += Math.abs(r - artR) > 0.02 ? ' — aperçu du cadrage imprimé' : '';
+  }
+
+  document.getElementById('product').addEventListener('click', e => {
+    const b = e.target.closest('.opt'); if (!b) return;
+    if (b.dataset.support) sel.support = b.dataset.support;
+    if (b.dataset.variant) sel.variant = b.dataset.variant;
+    if (b.dataset.ref) sel.ref = b.dataset.ref;
+    render();
+  });
+  document.getElementById('finishes').addEventListener('change', e => {
+    if (e.target.checked) sel.finishes.add(e.target.value); else sel.finishes.delete(e.target.value);
+    // un seul cadre à la fois
+    if (e.target.checked && /cadre/i.test(e.target.dataset.name)) {
+      document.querySelectorAll('#finishes input').forEach(i => { if (i !== e.target && /cadre/i.test(i.dataset.name)) { i.checked = false; sel.finishes.delete(i.value); } });
+    }
+    update();
+  });
+  document.querySelector('.qty').addEventListener('click', e => {
+    const d = Number(e.target.dataset.d); if (!d) return;
+    const q = document.getElementById('qty'); q.value = Math.max(Number(q.min), (Number(q.value) || 0) + d); update();
+  });
+  document.getElementById('qty').addEventListener('input', update);
+  document.getElementById('add').addEventListener('click', () => {
+    const prod = products.find(p => p.ref === sel.ref);
+    const quantity = Math.max(prod.min_qty, Number(document.getElementById('qty').value) || 1);
+    cart.add({ artworkSlug: art.slug, productRef: sel.ref, quantity, finishIds: [...sel.finishes],
+      // données d'affichage uniquement ; le prix est recalculé par l'API
+      title: art.title, preview: art.preview });
+    document.getElementById('added').innerHTML = `<div class="alert ok">Ajouté au panier. <a href="/panier/">Voir le panier</a></div>`;
+  });
+
+  if (!supports.length) {
+    document.querySelector('.buybar').innerHTML = `<div class="alert err">Ce visuel n'est pas encore disponible à la vente.</div>`;
+    return;
+  }
+  render();
+})();
+</script>
+</body>
+</html>

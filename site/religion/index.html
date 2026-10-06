@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artaluz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Marcellus&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/config.js"></script>
+</head>
+<body>
+<main>
+  <section class="rel-banner" id="banner">
+    <div class="wrap">
+      <div class="crumbs"><a href="/">Accueil</a></div>
+      <h1 id="title">&nbsp;</h1>
+      <div class="feasts" id="feasts"></div>
+    </div>
+  </section>
+  <section class="wrap">
+    <div class="filters" id="filters" aria-label="Filtrer les visuels"></div>
+    <div class="grid" id="grid" aria-live="polite"></div>
+    <div style="text-align:center;margin:32px 0"><button class="btn ghost" id="more" hidden>Voir plus de visuels</button></div>
+  </section>
+</main>
+<script type="module">
+import { chrome, catalog, api, esc, feastCard, artworkCard, RELIGION_COLORS } from '/assets/app.js';
+
+const relId = location.pathname.split('/').filter(Boolean)[1] || new URLSearchParams(location.search).get('id');
+chrome(relId);
+const params = new URLSearchParams(location.search);
+const state = { occasion: params.get('fete') || '', figure: params.get('figure') || '', offset: 0 };
+const PAGE = 24;
+
+(async () => {
+  const cat = await catalog();
+  const rel = cat.religions.find(r => r.id === relId);
+  if (!rel) { document.getElementById('title').textContent = 'Tradition introuvable'; return; }
+  document.title = `${rel.name} — décorations et art sacré imprimés | Artaluz`;
+  document.documentElement.style.setProperty('--c', RELIGION_COLORS[rel.id]);
+  document.getElementById('title').textContent = rel.name;
+
+  const holidays = await api(`/api/holidays?religion=${rel.id}`).catch(() => []);
+  document.getElementById('feasts').innerHTML = holidays.length
+    ? holidays.slice(0, 6).map(h => feastCard(h)).join('')
+    : `<div class="feast empty">Calendrier en préparation.</div>`;
+
+  const occ = cat.occasions.filter(o => o.religion_id === rel.id);
+  const figs = cat.figures.filter(f => f.religion_id === rel.id);
+  const chip = (id, name) => `<button class="chip" data-occ="${esc(id)}" aria-pressed="${state.occasion === id}">${esc(name)}</button>`;
+  document.getElementById('filters').innerHTML =
+    chip('', 'Tout') +
+    occ.filter(o => o.kind !== 'evenement_de_vie').map(o => chip(o.id, o.name)).join('') +
+    (occ.some(o => o.kind === 'evenement_de_vie') ? '<span class="sep" aria-hidden="true"></span>' : '') +
+    occ.filter(o => o.kind === 'evenement_de_vie').map(o => chip(o.id, o.name)).join('') +
+    (figs.length ? `<span class="sep" aria-hidden="true"></span><label class="sr-only" for="fig">${esc(rel.figure_label)}</label>
+      <select id="fig"><option value="">${esc(rel.figure_label)} : toutes</option>
+      ${figs.map(f => `<option value="${esc(f.id)}"${state.figure === f.id ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}</select>` : '');
+
+  document.getElementById('filters').addEventListener('click', e => {
+    const b = e.target.closest('[data-occ]'); if (!b) return;
+    state.occasion = b.dataset.occ;
+    document.querySelectorAll('[data-occ]').forEach(x => x.setAttribute('aria-pressed', x === b));
+    load(true);
+  });
+  document.getElementById('fig')?.addEventListener('change', e => { state.figure = e.target.value; load(true); });
+  document.getElementById('more').addEventListener('click', () => load(false));
+  load(true);
+
+  async function load(reset) {
+    if (reset) state.offset = 0;
+    const q = new URLSearchParams({ religion: rel.id, limit: PAGE, offset: state.offset });
+    if (state.occasion) q.set('occasion', state.occasion);
+    if (state.figure) q.set('figure', state.figure);
+    const url = new URL(location.href);
+    url.search = ''; if (state.occasion) url.searchParams.set('fete', state.occasion); if (state.figure) url.searchParams.set('figure', state.figure);
+    history.replaceState(null, '', url);
+    const items = await api(`/api/artworks?${q}`).catch(() => []);
+    const grid = document.getElementById('grid');
+    if (reset) grid.innerHTML = '';
+    if (reset && !items.length) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">Aucun visuel pour cette sélection pour l'instant. <a href="/religion/${rel.id}">Voir tous les visuels ${esc(rel.name.toLowerCase().startsWith('i') ? "de l'" : 'du ')}${esc(rel.name)}</a></div>`;
+    }
+    grid.insertAdjacentHTML('beforeend', items.map(artworkCard).join(''));
+    state.offset += items.length;
+    document.getElementById('more').hidden = items.length < PAGE;
+  }
+})();
+</script>
+</body>
+</html>

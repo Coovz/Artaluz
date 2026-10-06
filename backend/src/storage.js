@@ -47,7 +47,7 @@ async function signedUrl(bucket, p, days, downloadName) {
 function publicUrl(bucket, p) {
   if (!p) return null;
   if (sb) return sb.storage.from(bucket).getPublicUrl(p).data.publicUrl;
-  return `/local-storage/${bucket}/${p}`;
+  return `${process.env.PUBLIC_API_URL || ''}/local-storage/${bucket}/${p}`;
 }
 
 module.exports = { upload, download, signedUrl, publicUrl };

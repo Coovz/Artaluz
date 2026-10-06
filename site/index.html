@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artaluz — Art sacré imprimé pour vos fêtes religieuses</title>
+<meta name="description" content="Décorations religieuses imprimées en France : bâches, stickers, magnets, posters et tableaux en aluminium pour l'islam, le judaïsme, le catholicisme, le protestantisme et le bouddhisme.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Marcellus&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/config.js"></script>
+</head>
+<body>
+<main>
+  <section class="hero wrap">
+    <h1>L'art sacré de chaque tradition, imprimé pour vos fêtes</h1>
+    <p class="lead">Choisissez votre tradition, puis la fête ou la figure qui vous est chère. Chaque visuel s'imprime sur bâche, sticker, magnet, poster ou tableau en aluminium.</p>
+    <div class="arches" id="arches" aria-label="Choisir une tradition"></div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="t-fetes">
+    <div class="section-head"><h2 id="t-fetes">Les prochaines fêtes</h2><span class="muted">Dates limites pour une livraison à temps</span></div>
+    <div class="feasts" id="feasts"><div class="feast empty">Chargement du calendrier…</div></div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="t-sel">
+    <div class="section-head"><h2 id="t-sel">Notre sélection</h2></div>
+    <div class="grid" id="featured"></div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="t-sup">
+    <div class="section-head"><h2 id="t-sup">Cinq supports, un même visuel</h2></div>
+    <div class="supports" id="supports"></div>
+  </section>
+</main>
+<script type="module">
+import { chrome, catalog, api, esc, eur, feastCard, artworkCard, RELIGION_COLORS, SUPPORT_LABELS } from '/assets/app.js';
+chrome();
+
+const SUPPORT_TEXT = {
+  bache: 'Pour la façade, la cour ou la salle de prière. Œillets en option.',
+  sticker: 'Pour la porte, la vitre ou le cahier. Brillant ou mat.',
+  magnet: 'Pour le réfrigérateur ou le tableau du bureau.',
+  poster: 'Pour la chambre ou la salle de catéchisme.',
+  alu: 'Un tableau rigide qui traverse les années. Cadre en option.',
+};
+
+(async () => {
+  let cat;
+  try { cat = await catalog(); } catch (e) {
+    document.getElementById('arches').innerHTML = `<div class="empty-state">Le catalogue est momentanément indisponible. Réessayez dans un instant.</div>`;
+    return;
+  }
+  const relById = Object.fromEntries(cat.religions.map(r => [r.id, r]));
+  const holidays = await api('/api/holidays').catch(() => []);
+  const nextByRel = {};
+  for (const h of holidays) nextByRel[h.religion_id] ||= h;
+
+  // Arches : une porte par tradition, avec la prochaine fête
+  const covers = await Promise.all(cat.religions.map(r => api(`/api/artworks?religion=${r.id}&limit=1`).catch(() => [])));
+  document.getElementById('arches').innerHTML = cat.religions.map((r, i) => {
+    const n = nextByRel[r.id];
+    const cover = covers[i][0];
+    return `<a class="arch" style="--c:${RELIGION_COLORS[r.id]}" href="/religion/${r.id}">
+      ${cover ? `<img src="${esc(cover.preview)}" alt="">` : ''}
+      <span class="name">${esc(r.name)}</span>
+      <span class="next">${n ? `Prochaine fête : ${esc(n.name)}` : esc(r.figure_label)}</span></a>`;
+  }).join('');
+
+  document.getElementById('feasts').innerHTML = holidays.length
+    ? holidays.slice(0, 8).map(h => feastCard(h, relById)).join('')
+    : `<div class="feast empty">Le calendrier des fêtes arrive bientôt.</div>`;
+
+  const featured = await api('/api/artworks?limit=12').catch(() => []);
+  document.getElementById('featured').innerHTML = featured.length ? featured.map(artworkCard).join('')
+    : `<div class="empty-state">Les premières collections arrivent très bientôt.</div>`;
+
+  const from = {};
+  for (const p of cat.products) from[p.support] = Math.min(from[p.support] ?? Infinity, p.price_ttc * p.min_qty);
+  document.getElementById('supports').innerHTML = Object.keys(SUPPORT_LABELS).map(s => `<div class="support">
+    <h3>${SUPPORT_LABELS[s]}</h3><p class="muted">${SUPPORT_TEXT[s]}</p>
+    ${from[s] ? `<div class="from">dès ${eur(from[s])}</div>` : ''}</div>`).join('');
+})();
+</script>
+</body>
+</html>

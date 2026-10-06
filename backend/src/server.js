@@ -11,6 +11,7 @@ const storage = require('./storage');
 const { priceCart, publicCart, CartError } = require('./pricing');
 const orders = require('./orders');
 const artworks = require('./artworks');
+const holidays = require('./holidays');
 
 const stripe = config.stripeSecretKey ? require('stripe')(config.stripeSecretKey) : null;
 if (!stripe) console.warn('[artaluz] STRIPE_SECRET_KEY absente — paiement désactivé');
@@ -201,6 +202,30 @@ app.post('/api/admin/artworks', requireAdmin, upload.single('file'), wrap(async 
   }
 }));
 
+app.get('/api/admin/artworks', requireAdmin, wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `select a.slug, a.title, a.status, a.width_px, a.height_px, a.preview_path, a.featured, a.created_at,
+            ar.display_name as artist,
+            (select string_agg(coalesce(o.name, f.name, r.name), ', ') from artwork_tags t
+               join religions r on r.id = t.religion_id left join occasions o on o.id = t.occasion_id
+               left join figures f on f.id = t.figure_id where t.artwork_id = a.id) as tags
+       from artworks a join artists ar on ar.id = a.artist_id order by a.created_at desc limit 300`);
+  res.json(rows.map(r => ({ ...r, preview: previewUrl(r.preview_path) })));
+}));
+
+app.patch('/api/admin/artworks/:slug', requireAdmin, wrap(async (req, res) => {
+  const allowed = ['accepte', 'a_corriger', 'refuse', 'retire', 'en_attente'];
+  if (req.body.status && !allowed.includes(req.body.status)) return res.status(400).json({ error: 'Statut invalide' });
+  const { rows: [a] } = await db.query(
+    `update artworks set status = coalesce($2, status), featured = coalesce($3, featured),
+        moderation_note = coalesce($4, moderation_note),
+        published_at = case when $2 = 'accepte' and published_at is null then now() else published_at end
+      where slug = $1 returning slug, status, featured`,
+    [req.params.slug, req.body.status || null, req.body.featured ?? null, req.body.note || null]);
+  if (!a) return res.status(404).json({ error: 'Visuel introuvable' });
+  res.json(a);
+}));
+
 app.get('/api/admin/orders', requireAdmin, wrap(async (req, res) => {
   const { rows } = await db.query(
     `select o.order_number, o.status, o.customer_name, o.customer_email, o.amount_total, o.paid_at,
@@ -232,5 +257,11 @@ app.patch('/api/admin/orders/:number', requireAdmin, wrap(async (req, res) => {
 
 if (require.main === module) {
   app.listen(config.port, () => console.log(`[artaluz] API sur le port ${config.port}`));
+  // Calendrier des fêtes : mise à jour au démarrage puis chaque jour
+  const syncHolidays = () => holidays.refresh()
+    .then(n => n && console.log(`[holidays] ${n} date(s) ajoutée(s)`))
+    .catch(e => console.error('[holidays]', e.message));
+  syncHolidays();
+  setInterval(syncHolidays, 24 * 3600 * 1000).unref();
 }
 module.exports = app;
