@@ -53,7 +53,7 @@ const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] 
   const img = document.getElementById('img');
   img.src = art.preview; img.alt = art.title;
   document.getElementById('title').textContent = art.title;
-  document.getElementById('artist').textContent = art.is_internal ? 'Création Artaluz' : `Par ${art.artist}`;
+  document.getElementById('artist').textContent = art.artist;
   document.getElementById('desc').textContent = art.description || '';
   document.getElementById('crumbs').innerHTML = `<a href="/">Accueil</a> / ` + (mainRel ? `<a href="/religion/${mainRel}">${esc(art.tags[0].religion)}</a>` : '');
   document.getElementById('tags').innerHTML = art.tags.map(t => [

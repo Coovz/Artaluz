@@ -38,7 +38,10 @@ async function priceCart(items, promoCode = null, email = null) {
       throw new CartError(`Minimum ${prod.min_qty} exemplaires pour ${prod.variant} ${prod.format_label}`);
     }
 
+    if (raw.finishIds !== undefined && !Array.isArray(raw.finishIds)) throw new CartError('Finitions invalides');
+    if (typeof raw.artworkSlug !== 'string' || typeof raw.productRef !== 'string') throw new CartError('Article invalide');
     const finishIds = [...new Set(raw.finishIds || [])];
+    if (finishIds.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) throw new CartError('Finition invalide');
     let finishes = [];
     if (finishIds.length) {
       const { rows } = await db.query(
@@ -70,7 +73,9 @@ async function priceCart(items, promoCode = null, email = null) {
       [code, config.brand]);
     if (p && p.single_use_per_email && email) {
       const { rowCount } = await db.query(
-        'select 1 from promo_usage where upper(code) = $1 and lower(email) = lower($2)', [code, email]);
+        `select 1 from promo_usage u left join orders o on o.id = u.order_id
+          where upper(u.code) = $1 and lower(u.email) = lower($2)
+            and not (coalesce(o.status, '') = 'cancelled' or (o.status = 'pending' and o.created_at < now() - interval '70 minutes'))`, [code, email]);
       if (rowCount) throw new CartError('Ce code a déjà été utilisé');
     }
     if (!p) throw new CartError('Code promo invalide ou expiré');

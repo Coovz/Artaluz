@@ -15,8 +15,9 @@ const slugify = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
 async function inspect(buffer) {
   const meta = await sharp(buffer, { limitInputPixels: false }).metadata();
   if (!ACCEPTED.includes(meta.format)) throw new Error(`Format ${meta.format} refusé (JPEG, PNG, TIFF ou WebP)`);
-  if (Math.min(meta.width, meta.height) < 1000) throw new Error('Image trop petite : 1 000 px minimum sur le petit côté');
-  return { width: meta.width, height: meta.height, format: meta.format, space: meta.space, hasAlpha: meta.hasAlpha };
+  if (Math.min((meta.autoOrient || meta).width, (meta.autoOrient || meta).height) < 1000) throw new Error('Image trop petite : 1 000 px minimum sur le petit côté');
+  const { width, height } = meta.autoOrient || meta; // dimensions après rotation EXIF
+  return { width, height, format: meta.format, space: meta.space, hasAlpha: meta.hasAlpha };
 }
 
 /** Plus grand format imprimable sans descendre sous 70 % de la résolution cible, par support. */
@@ -52,6 +53,9 @@ async function watermarkedPreview(buffer) {
 async function createArtwork({ artistId, title, description, buffer, originalName, tags = [], supports, status = 'en_attente', featured = false }) {
   const info = await inspect(buffer);
   if (!tags.length) throw new Error('Au moins une religion est requise');
+  if (!/^[0-9a-f-]{36}$/i.test(String(artistId))) throw new Error('Artiste introuvable : identifiant requis');
+  const { rowCount: okArtist } = await db.query('select 1 from artists where id = $1', [artistId]);
+  if (!okArtist) throw new Error('Artiste introuvable : identifiant requis');
   const id = crypto.randomUUID();
   const ext = ({ jpeg: 'jpg', png: 'png', tiff: 'tif', webp: 'webp' })[info.format];
   const originalPath = `originals/${artistId}/${id}.${ext}`;

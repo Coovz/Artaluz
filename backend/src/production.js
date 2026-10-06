@@ -51,7 +51,8 @@ async function buildHdFile(orderNumber, lineIndex, line, originalBuffer) {
   const wPx = mmToPx(size.w * 10 + 2 * spec.bleedMm, spec.dpi);
   const hPx = mmToPx(size.h * 10 + 2 * spec.bleedMm, spec.dpi);
 
-  const meta = await sharp(originalBuffer, { limitInputPixels: false }).metadata();
+  const raw = await sharp(originalBuffer, { limitInputPixels: false }).metadata();
+  const meta = raw.autoOrient || raw; // dimensions après rotation EXIF
   // Résolution réelle du visuel source une fois imprimé à ce format (alerte si < 70 % de la cible)
   const scale = spec.fit === 'cover'
     ? Math.max(wPx / meta.width, hPx / meta.height)
@@ -133,7 +134,7 @@ async function buildWorkOrderPdf(order, lines) {
         ['Visuel', `${line.artwork.title} — ${line.artwork.slug}`],
         ['Fichier HD', hd.fileName],
         ['Fichier', `${hd.widthPx} × ${hd.heightPx} px, ${hd.dpi} dpi, TIFF sRGB`],
-        ['Résolution source', `${hd.effectiveDpi} dpi effectifs` + (hd.effectiveDpi < hd.dpi * 0.7 ? '  ⚠ À VÉRIFIER AVANT IMPRESSION' : '')],
+        ['Résolution source', `${hd.effectiveDpi} dpi effectifs` + (hd.effectiveDpi < hd.dpi * 0.7 ? '  ATTENTION : À VÉRIFIER AVANT IMPRESSION' : '')],
       ];
       let y = y0 + 32;
       for (const [k, v] of rows) {

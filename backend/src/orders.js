@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const db = require('./db');
 const config = require('./config');
 const storage = require('./storage');
-const { priceCart, htFromTtc, CartError } = require('./pricing');
+const { priceCart, CartError } = require('./pricing');
 const production = require('./production');
 const emails = require('./emails');
 
@@ -17,7 +17,9 @@ function newOrderNumber() {
 
 function validateCustomer(c) {
   const req = ['email', 'name', 'address1', 'postalCode', 'city', 'country'];
-  for (const k of req) if (!c || !String(c[k] || '').trim()) throw new CartError(`Champ manquant : ${k}`);
+  if (!c || typeof c !== 'object') throw new CartError('Coordonnées manquantes');
+  for (const k of [...req, 'address2']) if (c[k] !== undefined && c[k] !== null && typeof c[k] !== 'string') throw new CartError(`Champ invalide : ${k}`);
+  for (const k of req) if (!String(c[k] || '').trim()) throw new CartError(`Champ manquant : ${k}`);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) throw new CartError('Email invalide');
   if (!COUNTRIES.includes(String(c.country).toUpperCase())) throw new CartError('Pays de livraison non desservi');
 }
@@ -38,6 +40,18 @@ async function createPendingOrder({ items, promoCode, customer }) {
         customer.address1.trim(), (customer.address2 || '').trim() || null, customer.postalCode.trim(),
         customer.city.trim(), customer.country.toUpperCase(), cart.total, cart.shipping, cart.discount,
         cart.promo?.code || null, config.vatRate]);
+    if (cart.promo?.singleUse) {
+      // Réserve le code dès la création : deux paiements simultanés ne peuvent pas l'utiliser deux fois.
+      // Une réservation liée à une commande annulée ou abandonnée depuis plus de 70 min est libérée.
+      await c.query(
+        `delete from promo_usage u using orders o where o.id = u.order_id and upper(u.code) = upper($1)
+            and lower(u.email) = lower($2) and (o.status = 'cancelled' or (o.status = 'pending' and o.created_at < now() - interval '70 minutes'))`,
+        [cart.promo.code, o.customer_email]);
+      const { rowCount } = await c.query(
+        `insert into promo_usage (code, email, order_id) values ($1,$2,$3) on conflict (code, email) do nothing`,
+        [cart.promo.code, o.customer_email, o.id]);
+      if (!rowCount) throw new CartError('Ce code a déjà été utilisé ou une commande est en cours avec ce code');
+    }
     for (const [i, l] of cart.lines.entries()) {
       await c.query(
         `insert into order_items (order_id, product_type, quantity, unit_price, customization,
@@ -84,14 +98,15 @@ async function markPaid(orderId, { stripeSessionId = null, stripePaymentId = nul
     const { rows: [o] } = await c.query('select * from orders where id = $1 for update', [orderId]);
     if (!o) throw new Error(`Commande ${orderId} introuvable`);
     if (o.status !== 'pending') return null;
-    if (amountPaid !== null && amountPaid !== o.amount_total) {
-      console.error(`[orders] Montant payé ${amountPaid} ≠ montant attendu ${o.amount_total} pour ${o.order_number}`);
-    }
+    const mismatch = amountPaid !== null && amountPaid !== o.amount_total;
+    if (mismatch) console.error(`[orders] Montant payé ${amountPaid} ≠ montant attendu ${o.amount_total} pour ${o.order_number}`);
     const { rows: [{ inv }] } = await c.query('select next_invoice_number($1) as inv', [config.brand]);
     const { rows: [paid] } = await c.query(
       `update orders set status = 'paid', paid_at = now(), invoice_number = $2,
-          stripe_session_id = coalesce($3, stripe_session_id), stripe_payment_id = $4
-        where id = $1 returning *`, [orderId, inv, stripeSessionId, stripePaymentId]);
+          stripe_session_id = coalesce($3, stripe_session_id), stripe_payment_id = $4,
+          notes = case when $5 then concat_ws(E'\n', notes, 'MONTANT PAYÉ DIFFÉRENT (' || $6 || ' centimes) : production bloquée, à vérifier') else notes end
+        where id = $1 returning *`, [orderId, inv, stripeSessionId, stripePaymentId, mismatch, amountPaid]);
+    paid.amountMismatch = mismatch;
 
     if (paid.promo_code) {
       await c.query(`insert into promo_usage (code, email, order_id) values ($1,$2,$3)
@@ -99,13 +114,14 @@ async function markPaid(orderId, { stripeSessionId = null, stripePaymentId = nul
     }
     // Royalties : 10 % du HT avant remise, hors port, hors finitions — artistes externes uniquement
     const { rows: items } = await c.query(
-      `select oi.id, oi.quantity, p.price_ttc, ar.id as artist_id, ar.is_internal
-         from order_items oi join products p on p.ref = oi.product_ref
+      `select oi.id, oi.quantity, (oi.customization->>'royaltyBaseHt')::int as base, ar.id as artist_id, ar.is_internal
+         from order_items oi
          join artworks a on a.id = oi.artwork_id join artists ar on ar.id = a.artist_id
         where oi.order_id = $1`, [orderId]);
     for (const it of items) {
-      if (it.is_internal) continue;
-      const base = htFromTtc(it.price_ttc) * it.quantity;
+      // Assiette figée au moment de la commande (prix HT avant remise, hors port, hors finitions)
+      const base = it.base || 0;
+      if (it.is_internal || base <= 0) continue;
       await c.query(
         `insert into royalties (order_item_id, artist_id, base_ht, rate, amount)
          values ($1,$2,$3,$4,$5) on conflict (order_item_id) do nothing`,
@@ -144,6 +160,7 @@ async function runProduction(order) {
 async function finalizeOrder(orderId, payment) {
   const order = await markPaid(orderId, payment);
   if (!order) return null;
+  if (order.amountMismatch) return order; // production bloquée jusqu'à vérification dans le back office
   try {
     await runProduction(order);
     console.log(`[orders] ${order.order_number} : production envoyée`);
@@ -153,4 +170,24 @@ async function finalizeOrder(orderId, payment) {
   return order;
 }
 
-module.exports = { createPendingOrder, markPaid, runProduction, finalizeOrder, loadLines, newOrderNumber };
+/** Commande abandonnée (session Stripe expirée ou en échec) : annulation et libération du code promo. */
+async function cancelPending(orderId) {
+  await db.tx(async c => {
+    const { rowCount } = await c.query(`update orders set status = 'cancelled' where id = $1 and status = 'pending'`, [orderId]);
+    if (rowCount) await c.query('delete from promo_usage where order_id = $1', [orderId]);
+  });
+}
+
+/** Au démarrage : relance la production des commandes payées dont l'email atelier n'est pas parti. */
+async function sweepUnsent() {
+  const { rows } = await db.query(
+    `select * from orders where brand = $1 and status = 'paid' and production_email_sent_at is null
+        and paid_at < now() - interval '2 minutes' and coalesce(notes, '') not like '%MONTANT PAYÉ DIFFÉRENT%'
+      order by paid_at limit 20`, [config.brand]);
+  for (const o of rows) {
+    try { await runProduction(o); console.log(`[orders] ${o.order_number} : production relancée`); }
+    catch (e) { console.error(`[orders] ${o.order_number} : relance impossible`, e.message); }
+  }
+}
+
+module.exports = { cancelPending, sweepUnsent, createPendingOrder, markPaid, runProduction, finalizeOrder, loadLines, newOrderNumber };

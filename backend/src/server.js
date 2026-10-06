@@ -2,6 +2,7 @@
 // ARTALUZ — API (Node.js / Express) — déployée sur Railway
 // Basée sur l'architecture Stickrz : Stripe, Resend, Supabase (Postgres + Storage).
 // ============================================================================
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -21,7 +22,10 @@ app.set('trust proxy', 1);
 app.use(cors({ origin: config.frontendUrl.split(',').map(s => s.trim()), credentials: true,
   allowedHeaders: ['Content-Type', 'X-Admin-Token'] }));
 app.use((req, res, next) => (req.path === '/api/stripe-webhook' ? next() : express.json({ limit: '1mb' })(req, res, next)));
-if (config.localStorageDir) app.use('/local-storage', express.static(config.localStorageDir));
+// Développement uniquement : seuls les aperçus publics sont servis (jamais les originaux ni les fichiers HD)
+if (config.localStorageDir) {
+  app.use(`/local-storage/${config.storageBucketPublic}`, express.static(require('path').join(config.localStorageDir, config.storageBucketPublic)));
+}
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 300 * 1024 * 1024 } });
 const wrap = fn => (req, res) => fn(req, res).catch(err => {
@@ -31,10 +35,14 @@ const wrap = fn => (req, res) => fn(req, res).catch(err => {
 });
 function requireAdmin(req, res, next) {
   if (!config.adminPassword) return res.status(503).json({ error: 'Admin non configuré' });
-  if (req.get('X-Admin-Token') !== config.adminPassword) return res.status(401).json({ error: 'Accès refusé' });
+  const a = crypto.createHash('sha256').update(String(req.get('X-Admin-Token') || '')).digest();
+  const b = crypto.createHash('sha256').update(config.adminPassword).digest();
+  if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'Accès refusé' });
   next();
 }
 const previewUrl = p => storage.publicUrl(config.storageBucketPublic, p);
+const qs = v => (typeof v === 'string' ? v : Array.isArray(v) ? String(v[0]) : '');
+const int = (v, def, min, max) => { const n = Math.trunc(Number(qs(v))); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def; };
 
 // ---------------------------------------------------------------------------
 // Catalogue public
@@ -58,7 +66,7 @@ app.get('/api/catalog', wrap(async (req, res) => {
 
 app.get('/api/holidays', wrap(async (req, res) => {
   const params = [], where = ['h.starts_on >= current_date - 2', `h.starts_on < current_date + interval '13 months'`];
-  if (req.query.religion) { params.push(req.query.religion); where.push(`o.religion_id = $${params.length}`); }
+  if (qs(req.query.religion)) { params.push(qs(req.query.religion)); where.push(`o.religion_id = $${params.length}`); }
   const { rows } = await db.query(
     `select h.starts_on, h.ends_on, h.approximate, o.id as occasion_id, o.name, o.religion_id
        from holidays h join occasions o on o.id = h.occasion_id
@@ -69,13 +77,13 @@ app.get('/api/holidays', wrap(async (req, res) => {
 app.get('/api/artworks', wrap(async (req, res) => {
   const params = [], where = [`a.status = 'accepte'`];
   for (const [k, col] of [['religion', 'religion_id'], ['occasion', 'occasion_id'], ['figure', 'figure_id']]) {
-    if (req.query[k]) {
-      params.push(req.query[k]);
+    if (qs(req.query[k])) {
+      params.push(qs(req.query[k]));
       where.push(`exists (select 1 from artwork_tags t where t.artwork_id = a.id and t.${col} = $${params.length})`);
     }
   }
-  if (req.query.q) { params.push(`%${req.query.q}%`); where.push(`(a.title ilike $${params.length} or array_to_string(a.tags, ' ') ilike $${params.length})`); }
-  const limit = Math.min(60, Number(req.query.limit) || 24), offset = Math.max(0, Number(req.query.offset) || 0);
+  if (qs(req.query.q)) { params.push(`%${qs(req.query.q).slice(0, 80)}%`); where.push(`(a.title ilike $${params.length} or array_to_string(a.tags, ' ') ilike $${params.length})`); }
+  const limit = int(req.query.limit, 24, 1, 60), offset = int(req.query.offset, 0, 0, 100000);
   const { rows } = await db.query(
     `select a.slug, a.title, a.preview_path, a.width_px, a.height_px, a.featured, ar.display_name as artist
        from artworks a join artists ar on ar.id = a.artist_id
@@ -96,7 +104,8 @@ app.get('/api/artworks/:slug', wrap(async (req, res) => {
        left join occasions o on o.id = t.occasion_id left join figures f on f.id = t.figure_id
       where t.artwork_id = $1`, [a.id]);
   const printable = await artworks.printableProducts(a.width_px, a.height_px);
-  res.json({ ...a, id: undefined, preview_path: undefined, preview: previewUrl(a.preview_path), tags,
+  res.json({ ...a, id: undefined, is_internal: undefined, artist: a.is_internal ? 'Création Artaluz' : `Par ${a.artist}`,
+    preview_path: undefined, preview: previewUrl(a.preview_path), tags,
     printableRefs: printable });
 }));
 
@@ -113,6 +122,7 @@ app.post('/api/checkout', wrap(async (req, res) => {
   const { order, cart } = await orders.createPendingOrder(req.body);
   const sessionCfg = {
     mode: 'payment',
+    payment_method_types: ['card'],
     customer_email: order.customer_email,
     locale: 'fr',
     line_items: cart.lines.map(l => ({
@@ -134,12 +144,19 @@ app.post('/api/checkout', wrap(async (req, res) => {
     cancel_url: `${config.frontendUrl.split(',')[0]}/panier/?status=annule`,
     expires_at: Math.floor(Date.now() / 1000) + 3600,
   };
-  if (cart.discount > 0) {
-    const coupon = await stripe.coupons.create({ amount_off: cart.discount, currency: 'eur', duration: 'once',
-      max_redemptions: 1, name: `Code ${cart.promo.code}` });
-    sessionCfg.discounts = [{ coupon: coupon.id }];
+  let coupon = null, session;
+  try {
+    if (cart.discount > 0) {
+      coupon = await stripe.coupons.create({ amount_off: cart.discount, currency: 'eur', duration: 'once',
+        max_redemptions: 1, name: `Code ${cart.promo.code}` });
+      sessionCfg.discounts = [{ coupon: coupon.id }];
+    }
+    session = await stripe.checkout.sessions.create(sessionCfg);
+  } catch (e) {
+    await orders.cancelPending(order.id).catch(() => {});
+    if (coupon) await stripe.coupons.del(coupon.id).catch(() => {});
+    throw e;
   }
-  const session = await stripe.checkout.sessions.create(sessionCfg);
   await db.query('update orders set stripe_session_id = $2 where id = $1', [order.id, session.id]);
   res.json({ checkoutUrl: session.url, orderNumber: order.order_number });
 }));
@@ -153,20 +170,31 @@ app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async
     console.error('[webhook] signature invalide', e.message);
     return res.status(400).send('Signature invalide');
   }
-  if (event.type === 'checkout.session.completed' && event.data.object.payment_status === 'paid') {
-    const s = event.data.object;
-    if (s.metadata?.brand === config.brand && s.metadata?.orderId) {
-      // Réponse immédiate à Stripe ; la production (fichiers HD, emails) tourne ensuite.
-      res.json({ received: true });
-      orders.finalizeOrder(s.metadata.orderId, { stripeSessionId: s.id,
-        stripePaymentId: s.payment_intent, amountPaid: s.amount_total })
-        .catch(e => console.error('[webhook] finalisation', e));
-      return;
+  const s = event.data.object;
+  if (s?.metadata?.brand !== config.brand || !s.metadata?.orderId) return res.json({ received: true });
+  const paidEvent = (event.type === 'checkout.session.completed' && s.payment_status === 'paid')
+    || event.type === 'checkout.session.async_payment_succeeded';
+  if (paidEvent) {
+    let order;
+    try {
+      // Enregistré AVANT de répondre : si la base échoue, Stripe renverra l'événement.
+      order = await orders.markPaid(s.metadata.orderId, { stripeSessionId: s.id,
+        stripePaymentId: s.payment_intent, amountPaid: s.amount_total });
+    } catch (e) {
+      console.error('[webhook] enregistrement du paiement', e);
+      return res.status(500).send('Erreur temporaire');
     }
+    res.json({ received: true });
+    if (order && !order.amountMismatch) {
+      orders.runProduction(order)
+        .then(() => console.log(`[orders] ${order.order_number} : production envoyée`))
+        .catch(e => console.error(`[orders] ${order.order_number} : échec production — relance au prochain démarrage ou depuis le back office`, e));
+    }
+    return;
   }
-  if (event.type === 'checkout.session.expired') {
-    const id = event.data.object.metadata?.orderId;
-    if (id) await db.query(`update orders set status = 'cancelled' where id = $1 and status = 'pending'`, [id]).catch(() => {});
+  if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
+    await orders.cancelPending(s.metadata.orderId).catch(e => console.error('[webhook] annulation', e.message));
+    for (const d of s.discounts || []) if (d.coupon) await stripe.coupons.del(typeof d.coupon === 'string' ? d.coupon : d.coupon.id).catch(() => {});
   }
   res.json({ received: true });
 });
@@ -188,6 +216,7 @@ app.post('/api/admin/artworks', requireAdmin, upload.single('file'), wrap(async 
   let artistId = req.body.artistId;
   if (!artistId) {
     const { rows: [studio] } = await db.query(`select id from artists where is_internal order by created_at limit 1`);
+    if (!studio) return res.status(400).json({ error: 'Artiste interne absent : appliquez 003_artaluz_taxonomie.sql' });
     artistId = studio.id;
   }
   try {
@@ -197,7 +226,7 @@ app.post('/api/admin/artworks', requireAdmin, upload.single('file'), wrap(async 
       status: req.body.status || 'accepte', featured: req.body.featured === 'true' });
     res.json(out);
   } catch (e) {
-    if (/refusé|trop petite|requise/.test(e.message)) return res.status(400).json({ error: e.message });
+    if (/refusé|trop petite|requise|introuvable|unsupported image format|Input buffer/i.test(e.message)) return res.status(400).json({ error: e.message });
     throw e;
   }
 }));
@@ -262,6 +291,7 @@ if (require.main === module) {
     .then(n => n && console.log(`[holidays] ${n} date(s) ajoutée(s)`))
     .catch(e => console.error('[holidays]', e.message));
   syncHolidays();
+  orders.sweepUnsent().catch(e => console.error('[orders] relance', e.message));
   setInterval(syncHolidays, 24 * 3600 * 1000).unref();
 }
 module.exports = app;
