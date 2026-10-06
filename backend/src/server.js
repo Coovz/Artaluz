@@ -20,8 +20,15 @@ if (!stripe) console.warn('[artaluz] STRIPE_SECRET_KEY absente — paiement dés
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors({ origin: config.frontendUrl.split(',').map(s => s.trim()), credentials: true,
-  allowedHeaders: ['Content-Type', 'X-Admin-Token'] }));
+// Origines autorisées : FRONTEND_URL + les adresses du site connues (tolère espaces et « / » final)
+const clean = u => u.trim().replace(/\/+$/, '').toLowerCase();
+const ALLOWED = new Set([...config.frontendUrl.split(','), 'https://artaluz.com', 'https://www.artaluz.com',
+  'https://artaluz.netlify.app'].map(clean).filter(Boolean));
+app.use(cors({
+  origin: (origin, cb) => cb(null, !origin || ALLOWED.has(clean(origin)) || /^https:\/\/[a-z0-9-]+--artaluz\.netlify\.app$/.test(origin)),
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'X-Admin-Token'],
+}));
 app.use((req, res, next) => (req.path === '/api/stripe-webhook' ? next() : express.json({ limit: '1mb' })(req, res, next)));
 // Développement uniquement : seuls les aperçus publics sont servis (jamais les originaux ni les fichiers HD)
 if (config.localStorageDir) {
