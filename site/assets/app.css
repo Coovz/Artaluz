@@ -43,7 +43,8 @@ p { margin: 0 0 1em; max-width: 68ch; }
 .site-head { background: var(--paper); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
 .site-head .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
 .logo { font-family: var(--display); font-size: 1.7rem; text-decoration: none; letter-spacing: .04em; display: flex; align-items: center; gap: 10px; }
-.logo img { height: 34px; width: auto; }
+.site-head .logo img { height: 40px; width: auto; }
+@media (max-width: 520px) { .site-head .logo img { height: 28px; } }
 .nav { display: flex; gap: 4px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
 .nav a { text-decoration: none; padding: 8px 10px; border-radius: var(--radius); white-space: nowrap; font-size: .95rem; }
 .nav a:hover, .nav a[aria-current="page"] { background: var(--stone); }
@@ -63,7 +64,7 @@ p { margin: 0 0 1em; max-width: 68ch; }
 .btn.block { width: 100%; }
 
 /* Accueil : les arches */
-.hero { padding: 48px 0 32px; }
+.hero { padding-block: 48px 32px; }
 .hero h1 { max-width: 16ch; }
 .hero .lead { font-size: 1.15rem; color: var(--ink-soft); margin-top: 16px; }
 .arches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-top: 36px; }
@@ -81,7 +82,7 @@ p { margin: 0 0 1em; max-width: 68ch; }
 }
 @media (max-width: 520px) { .arches { grid-template-columns: repeat(5, 78%); } }
 
-.section { padding: 48px 0; }
+.section { padding-block: 48px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 
 /* Calendrier des fêtes */

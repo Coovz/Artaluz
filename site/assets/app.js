@@ -85,7 +85,7 @@ export async function chrome(current = '') {
   const head = document.createElement('header');
   head.className = 'site-head';
   head.innerHTML = `<div class="wrap">
-    <a class="logo" href="/"><img src="/assets/logo.svg" alt="" onerror="this.remove()">Artaluz</a>
+    <a class="logo" href="/"><img src="/assets/logo.png" alt="Artaluz" width="485" height="132" onerror="this.replaceWith('Artaluz')"></a>
     <nav class="nav" aria-label="Religions"></nav>
     <a class="cart-link" href="/panier/"><span>Panier</span><span class="cart-count">0</span></a></div>`;
   document.body.prepend(head);
