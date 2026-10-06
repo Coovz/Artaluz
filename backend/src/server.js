@@ -8,6 +8,7 @@ const cors = require('cors');
 const multer = require('multer');
 const config = require('./config');
 const db = require('./db');
+const db_ = db;
 const storage = require('./storage');
 const { priceCart, publicCart, CartError } = require('./pricing');
 const orders = require('./orders');
@@ -47,7 +48,22 @@ const int = (v, def, min, max) => { const n = Math.trunc(Number(qs(v))); return 
 // ---------------------------------------------------------------------------
 // Catalogue public
 // ---------------------------------------------------------------------------
-app.get('/health', (req, res) => res.json({ ok: true, stripe: !!stripe }));
+app.get('/health', async (req, res) => {
+  // Diagnostic public sans donnée sensible : seule une catégorie d'erreur est renvoyée
+  let db = 'ok';
+  try {
+    await db_.query('select count(*) from holidays');
+  } catch (e) {
+    const m = String(e.message || '');
+    db = /password authentication/i.test(m) ? 'mot de passe incorrect'
+      : /tenant or user not found/i.test(m) ? 'utilisateur incorrect (format postgres.xxxx attendu)'
+      : /does not exist/i.test(m) ? 'tables absentes : mauvais projet Supabase ou scripts SQL non exécutés'
+      : /timeout|ENOTFOUND|ECONNREFUSED|EAI_AGAIN/i.test(m) ? 'base injoignable : vérifier l\'adresse (pooler, port 6543)'
+      : /ssl|certificate/i.test(m) ? 'problème SSL'
+      : 'autre erreur : ' + (e.code || 'inconnue');
+  }
+  res.json({ ok: true, stripe: !!stripe, db });
+});
 
 app.get('/api/catalog', wrap(async (req, res) => {
   const [rel, occ, fig, prod, fin] = await Promise.all([
