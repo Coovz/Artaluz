@@ -11,9 +11,20 @@ const pool = new Pool({
   connectionString: config.databaseUrl,
   ssl: /supabase\.(co|com)/.test(config.databaseUrl) ? { rejectUnauthorized: false } : false,
   max: 10,
+  connectionTimeoutMillis: 10000,   // une base injoignable renvoie une erreur au lieu de bloquer
+  query_timeout: 30000,
 });
 
 const query = (text, params) => pool.query(text, params);
+
+// Diagnostic au démarrage, sans jamais afficher le mot de passe
+if (config.databaseUrl) {
+  let host = '?';
+  try { const u = new URL(config.databaseUrl); host = `${u.hostname}:${u.port || 5432}`; } catch { host = 'adresse illisible'; }
+  pool.query('select 1')
+    .then(() => console.log(`[db] connexion OK (${host})`))
+    .catch(e => console.error(`[db] connexion IMPOSSIBLE vers ${host} : ${e.message}`));
+}
 
 async function tx(fn) {
   const client = await pool.connect();
