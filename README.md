@@ -35,7 +35,7 @@ Ajouter et vérifier le domaine `artaluz.com` (enregistrements DNS), puis expéd
 1. Nouveau site depuis le dépôt : base directory `site`, publish directory `site`, pas de commande de build.
 2. Dans `site/assets/config.js`, vérifier `ARTALUZ_API = 'https://api.artaluz.com'`.
 3. Domaine `artaluz.com` + `www`.
-4. Déposer le logo dans `site/assets/logo.svg` (il s'affiche automatiquement dans l'en-tête).
+4. Logo : `site/assets/logo.png` (en-tête) et `site/assets/logo-full.png` (avec la signature), déjà intégrés.
 
 ### 6. Premiers visuels
 `https://artaluz.com/admin/` → mot de passe `ADMIN_PASSWORD` → onglet Visuels. Chaque visuel est contrôlé (format, 1 000 px minimum), un aperçu filigrané est créé et seuls les formats imprimables à au moins 70 % de la résolution cible sont proposés à la vente.
