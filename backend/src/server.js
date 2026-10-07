@@ -144,6 +144,10 @@ app.post('/api/cart/price', wrap(async (req, res) => {
 app.post('/api/checkout', wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: 'Paiement indisponible' });
   const { order, cart } = await orders.createPendingOrder(req.body);
+  // Retour après paiement sur le site d'où vient le client (Netlify en test, artaluz.com ensuite)
+  const origin = req.get('origin');
+  const siteUrl = origin && (ALLOWED.has(clean(origin)) || /^https:\/\/[a-z0-9-]+--artaluz\.netlify\.app$/.test(origin))
+    ? clean(origin) : config.frontendUrl.split(',')[0].trim().replace(/\/+$/, '');
   const sessionCfg = {
     mode: 'payment',
     payment_method_types: ['card'],
@@ -164,8 +168,8 @@ app.post('/api/checkout', wrap(async (req, res) => {
       fixed_amount: { amount: cart.shipping, currency: 'eur' } } }],
     metadata: { orderId: order.id, orderNumber: order.order_number, brand: config.brand },
     payment_intent_data: { metadata: { orderNumber: order.order_number } },
-    success_url: `${config.frontendUrl.split(',')[0]}/commande/?n=${order.order_number}&status=ok`,
-    cancel_url: `${config.frontendUrl.split(',')[0]}/panier/?status=annule`,
+    success_url: `${siteUrl}/commande/?n=${order.order_number}&status=ok`,
+    cancel_url: `${siteUrl}/panier/?status=annule`,
     expires_at: Math.floor(Date.now() / 1000) + 3600,
   };
   let coupon = null, session;
