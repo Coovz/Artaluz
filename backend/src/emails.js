@@ -39,7 +39,7 @@ const layout = (title, body) => `<!doctype html><html><body style="margin:0;back
 
 /** Email atelier : bon de fabrication en pièce jointe + un lien HD signé par ligne. */
 async function sendProductionEmail(order, lines, workOrderPdf) {
-  const rows = lines.map(({ line, hd, url }, i) => `
+  const rows = lines.map(({ line, hd, url, sourceUrl }, i) => `
     <tr><td style="padding:10px 8px;border-bottom:1px solid #e5ded3;vertical-align:top"><b>L${i + 1}</b></td>
     <td style="padding:10px 8px;border-bottom:1px solid #e5ded3">
       <b>${line.quantity} × ${esc(line.product.variant)}</b> — ${String(hd.size.w).replace('.', ',')} × ${String(hd.size.h).replace('.', ',')} cm<br>
@@ -47,6 +47,7 @@ async function sendProductionEmail(order, lines, workOrderPdf) {
       Visuel : ${esc(line.artwork.title)}<br>
       ${hd.effectiveDpi < hd.dpi * 0.7 ? `<span style="color:#b00020"><b>⚠ Résolution source ${hd.effectiveDpi} dpi : à vérifier</b></span><br>` : ''}
       <a href="${esc(url)}" style="color:#7a4b12">Télécharger le fichier HD</a> <span style="color:#8a8175">(${esc(hd.fileName)})</span>
+      ${sourceUrl ? `<br><a href="${esc(sourceUrl)}" style="color:#7a4b12">Télécharger le PDF source</a> <span style="color:#8a8175">(fichier d'origine, vectoriel)</span>` : ''}
     </td></tr>`).join('');
   const html = layout(`Nouvelle commande ${esc(order.order_number)}`, `
     <p>Payée le ${new Date(order.paid_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} — total ${eur(order.amount_total)} TTC.</p>

@@ -146,7 +146,10 @@ async function runProduction(order) {
       throw e;
     }
     const url = await storage.signedUrl(config.storageBucketPrivate, hd.path, config.hdLinkDays, hd.fileName);
-    prepared.push({ line, hd, url, thumb: await production.thumbnail(original) });
+    // Visuel fourni en PDF : l'atelier reçoit aussi le PDF d'origine (vectoriel, profils couleur conservés)
+    const sourceUrl = hd.fromPdf ? await storage.signedUrl(config.storageBucketPrivate, line.artwork.original_path,
+      config.hdLinkDays, `${order.order_number}-L${i + 1}-source.pdf`) : null;
+    prepared.push({ line, hd, url, sourceUrl, thumb: await production.thumbnail(original) });
   }
   const pdf = await production.buildWorkOrderPdf(order, prepared);
   await storage.upload(config.storageBucketPrivate, `hd/${order.order_number}/BDF-${order.order_number}.pdf`, pdf, 'application/pdf');

@@ -38,7 +38,7 @@ Ajouter et vérifier le domaine `artaluz.com` (enregistrements DNS), puis expéd
 4. Logo : `site/assets/logo.png` (en-tête) et `site/assets/logo-full.png` (avec la signature), déjà intégrés.
 
 ### 6. Premiers visuels
-`https://artaluz.com/admin/` → mot de passe `ADMIN_PASSWORD` → onglet Visuels. Chaque visuel est contrôlé (format, 1 000 px minimum), un aperçu filigrané est créé et seuls les formats imprimables à au moins 70 % de la résolution cible sont proposés à la vente.
+`https://artaluz.com/admin/` → mot de passe `ADMIN_PASSWORD` → onglet Visuels. Formats acceptés : PDF HD (page 1, considéré vectoriel ; le PDF d'origine est aussi envoyé à l'atelier), JPEG, PNG, TIFF, WebP. Chaque image est contrôlée (1 000 px minimum), un aperçu filigrané est créé et seuls les formats imprimables à au moins 70 % de la résolution cible sont proposés à la vente.
 
 ## Fonctionnement d'une commande
 1. Le navigateur envoie le panier ; **l'API recalcule tous les prix** depuis la base (aucun prix du navigateur n'est utilisé), vérifie les minimums (5 pour le sticker de 5 cm) et applique la livraison offerte dès 75 € TTC.

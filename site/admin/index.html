@@ -40,7 +40,7 @@
     <section data-panel="visuels" class="admin-grid">
       <form id="upload" class="panel">
         <h3 style="margin-bottom:14px">Ajouter un visuel</h3>
-        <label class="field"><span>Fichier source (JPEG, PNG, TIFF, 1 000 px minimum)</span><input type="file" name="file" accept="image/jpeg,image/png,image/tiff,image/webp" required></label>
+        <label class="field"><span>Fichier source : PDF HD, ou image JPEG, PNG, TIFF (1 000 px minimum)</span><input type="file" name="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/tiff,image/webp" required></label>
         <label class="field"><span>Titre</span><input name="title" required></label>
         <label class="field"><span>Description (facultatif)</span><textarea name="description" rows="3"></textarea></label>
         <span style="font-size:.88rem;display:block;margin-bottom:4px">Classement (une ligne par rattachement)</span>
@@ -113,7 +113,9 @@ document.getElementById('upload').addEventListener('submit', async e => {
   try {
     const out = await adm('/api/admin/artworks', { method: 'POST', body: fd });
     const total = cat.products.length;
-    msg.innerHTML = `<div class="alert ok">« ${esc(f.title.value)} » est en ligne (${out.width} × ${out.height} px). Imprimable sur ${out.printable.length} formats sur ${total}.</div>`;
+    const size = out.format === 'pdf' ? `PDF, page ${String(out.pageCm.w).replace('.', ',')} × ${String(out.pageCm.h).replace('.', ',')} cm` : `${out.width} × ${out.height} px`;
+    const warn = out.format === 'pdf' ? `<br>Les images intégrées au PDF ne sont pas contrôlées : vérifiez leur résolution pour les grands formats.${out.pages > 1 ? ` Seule la page 1 sur ${out.pages} est utilisée.` : ''}` : '';
+    msg.innerHTML = `<div class="alert ok">« ${esc(f.title.value)} » est en ligne (${size}). Imprimable sur ${out.printable.length} formats sur ${total}.${warn}</div>`;
     f.reset(); document.getElementById('tagrows').innerHTML = ''; addTagRow(); loadArts();
   } catch (err) { msg.innerHTML = `<div class="alert err">${esc(err.message)}</div>`; }
   btn.disabled = false; btn.textContent = 'Mettre en ligne';
@@ -124,7 +126,7 @@ async function loadArts() {
   document.getElementById('arts').innerHTML = rows.length ? rows.map(a => `<tr>
     <td><img src="${esc(a.preview)}" alt=""></td>
     <td><a href="/visuel/${encodeURIComponent(a.slug)}" target="_blank" rel="noopener"><b>${esc(a.title)}</b></a><br><span class="muted">${esc(a.artist)}</span></td>
-    <td>${esc(a.tags || '')}</td><td>${a.width_px} × ${a.height_px}</td>
+    <td>${esc(a.tags || '')}</td><td>${a.original_format === 'pdf' ? 'PDF' : `${a.width_px} × ${a.height_px}`}</td>
     <td><select data-art="${esc(a.slug)}" aria-label="Statut">${Object.entries(ART_STATUS).map(([k, v]) => `<option value="${k}"${k === a.status ? ' selected' : ''}>${v}</option>`).join('')}</select></td></tr>`).join('')
     : `<tr><td colspan="5" class="muted">Aucun visuel pour l'instant. Ajoutez le premier avec le formulaire.</td></tr>`;
 }

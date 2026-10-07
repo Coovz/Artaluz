@@ -5,6 +5,11 @@ const db = require('./db');
 const config = require('./config');
 const storage = require('./storage');
 const { PRINT_SPECS } = require('./production');
+const { isPdf, pdfInfo, renderPdf } = require('./pdf');
+
+// Un PDF est considéré vectoriel : on enregistre ses proportions sur une base de 20 000 px
+// (tous les formats au bon ratio sont proposés). Les images intégrées au PDF ne sont pas contrôlées.
+const PDF_VIRTUAL_LONG_SIDE = 20000;
 
 const ACCEPTED = ['jpeg', 'png', 'tiff', 'webp'];
 
@@ -13,8 +18,14 @@ const slugify = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 /** Contrôle d'un fichier source : format, dimensions, formats imprimables. */
 async function inspect(buffer) {
+  if (isPdf(buffer)) {
+    const { widthPt, heightPt, pages } = await pdfInfo(buffer);
+    const k = PDF_VIRTUAL_LONG_SIDE / Math.max(widthPt, heightPt);
+    return { width: Math.round(widthPt * k), height: Math.round(heightPt * k), format: 'pdf', pages,
+      pageCm: { w: +(widthPt / 72 * 2.54).toFixed(1), h: +(heightPt / 72 * 2.54).toFixed(1) } };
+  }
   const meta = await sharp(buffer, { limitInputPixels: false }).metadata();
-  if (!ACCEPTED.includes(meta.format)) throw new Error(`Format ${meta.format} refusé (JPEG, PNG, TIFF ou WebP)`);
+  if (!ACCEPTED.includes(meta.format)) throw new Error(`Format ${meta.format} refusé (PDF, JPEG, PNG, TIFF ou WebP)`);
   if (Math.min((meta.autoOrient || meta).width, (meta.autoOrient || meta).height) < 1000) throw new Error('Image trop petite : 1 000 px minimum sur le petit côté');
   const { width, height } = meta.autoOrient || meta; // dimensions après rotation EXIF
   return { width, height, format: meta.format, space: meta.space, hasAlpha: meta.hasAlpha };
@@ -36,7 +47,13 @@ async function printableProducts(widthPx, heightPx) {
 }
 
 async function watermarkedPreview(buffer) {
-  const base = sharp(buffer, { limitInputPixels: false }).rotate().resize(1600, 1600, { fit: 'inside' });
+  let base;
+  if (isPdf(buffer)) {
+    const r = await renderPdf(buffer, { longSide: 1600 });
+    base = sharp(r.data, { raw: { width: r.width, height: r.height, channels: r.channels } });
+  } else {
+    base = sharp(buffer, { limitInputPixels: false }).rotate().resize(1600, 1600, { fit: 'inside' });
+  }
   const { width, height } = await base.clone().toBuffer({ resolveWithObject: true }).then(r => r.info);
   const fs = Math.round(Math.min(width, height) / 9);
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
@@ -57,10 +74,10 @@ async function createArtwork({ artistId, title, description, buffer, originalNam
   const { rowCount: okArtist } = await db.query('select 1 from artists where id = $1', [artistId]);
   if (!okArtist) throw new Error('Artiste introuvable : identifiant requis');
   const id = crypto.randomUUID();
-  const ext = ({ jpeg: 'jpg', png: 'png', tiff: 'tif', webp: 'webp' })[info.format];
+  const ext = ({ jpeg: 'jpg', png: 'png', tiff: 'tif', webp: 'webp', pdf: 'pdf' })[info.format];
   const originalPath = `originals/${artistId}/${id}.${ext}`;
   const previewPath = `previews/${id}.jpg`;
-  await storage.upload(config.storageBucketPrivate, originalPath, buffer, `image/${info.format}`);
+  await storage.upload(config.storageBucketPrivate, originalPath, buffer, info.format === 'pdf' ? 'application/pdf' : `image/${info.format}`);
   await storage.upload(config.storageBucketPublic, previewPath, await watermarkedPreview(buffer), 'image/jpeg');
 
   let slug = slugify(title) || id.slice(0, 8);

@@ -249,7 +249,7 @@ app.post('/api/admin/artworks', requireAdmin, upload.single('file'), wrap(async 
       status: req.body.status || 'accepte', featured: req.body.featured === 'true' });
     res.json(out);
   } catch (e) {
-    if (/refusé|trop petite|requise|introuvable|unsupported image format|Input buffer/i.test(e.message)) return res.status(400).json({ error: e.message });
+    if (/refusé|trop petite|requise|introuvable|PDF|unsupported image format|Input buffer/i.test(e.message)) return res.status(400).json({ error: e.message });
     throw e;
   }
 }));
@@ -257,6 +257,7 @@ app.post('/api/admin/artworks', requireAdmin, upload.single('file'), wrap(async 
 app.get('/api/admin/artworks', requireAdmin, wrap(async (req, res) => {
   const { rows } = await db.query(
     `select a.slug, a.title, a.status, a.width_px, a.height_px, a.preview_path, a.featured, a.created_at,
+            case when a.original_path ilike '%.pdf' then 'pdf' else 'image' end as original_format,
             ar.display_name as artist,
             (select string_agg(coalesce(o.name, f.name, r.name), ', ') from artwork_tags t
                join religions r on r.id = t.religion_id left join occasions o on o.id = t.occasion_id

@@ -4,6 +4,7 @@ const PDFDocument = require('pdfkit');
 const bwipjs = require('bwip-js');
 const config = require('./config');
 const storage = require('./storage');
+const { isPdf, renderPdf } = require('./pdf');
 
 sharp.cache(false);
 sharp.concurrency(1); // limite la mémoire sur Railway (fichiers jusqu'à ~60 Mpx)
@@ -51,16 +52,26 @@ async function buildHdFile(orderNumber, lineIndex, line, originalBuffer) {
   const wPx = mmToPx(size.w * 10 + 2 * spec.bleedMm, spec.dpi);
   const hPx = mmToPx(size.h * 10 + 2 * spec.bleedMm, spec.dpi);
 
-  const raw = await sharp(originalBuffer, { limitInputPixels: false }).metadata();
-  const meta = raw.autoOrient || raw; // dimensions après rotation EXIF
-  // Résolution réelle du visuel source une fois imprimé à ce format (alerte si < 70 % de la cible)
-  const scale = spec.fit === 'cover'
-    ? Math.max(wPx / meta.width, hPx / meta.height)
-    : Math.min(wPx / meta.width, hPx / meta.height);
-  const effectiveDpi = Math.round(spec.dpi / scale);
+  const fromPdf = isPdf(originalBuffer);
+  let input, effectiveDpi;
+  if (fromPdf) {
+    // PDF : rendu direct à la taille finale (net pour le vectoriel) ; le PDF source est aussi transmis à l'atelier
+    const r = await renderPdf(originalBuffer, { width: wPx, height: hPx, fit: spec.fit });
+    const want = spec.fit === 'cover' ? Math.max(wPx / r.width, hPx / r.height) : Math.min(wPx / r.width, hPx / r.height);
+    effectiveDpi = Math.round(spec.dpi / Math.max(want, 1)); // < cible seulement si le garde-fou mémoire a réduit le rendu
+    input = sharp(r.data, { raw: { width: r.width, height: r.height, channels: r.channels }, limitInputPixels: false });
+  } else {
+    const raw = await sharp(originalBuffer, { limitInputPixels: false }).metadata();
+    const meta = raw.autoOrient || raw; // dimensions après rotation EXIF
+    // Résolution réelle du visuel source une fois imprimé à ce format (alerte si < 70 % de la cible)
+    const scale = spec.fit === 'cover'
+      ? Math.max(wPx / meta.width, hPx / meta.height)
+      : Math.min(wPx / meta.width, hPx / meta.height);
+    effectiveDpi = Math.round(spec.dpi / scale);
+    input = sharp(originalBuffer, { limitInputPixels: false }).rotate();
+  }
 
-  const buf = await sharp(originalBuffer, { limitInputPixels: false })
-    .rotate()
+  const buf = await input
     .resize(wPx, hPx, { fit: spec.fit === 'cover' ? 'cover' : 'contain', position: 'centre',
       background: { r: 255, g: 255, b: 255, alpha: 0 }, kernel: 'lanczos3' })
     .toColorspace('srgb')
@@ -71,10 +82,14 @@ async function buildHdFile(orderNumber, lineIndex, line, originalBuffer) {
   const fileName = hdFileName(orderNumber, lineIndex, line.product, size);
   const path = `hd/${orderNumber}/${fileName}`;
   await storage.upload(config.storageBucketPrivate, path, buf, 'image/tiff');
-  return { path, fileName, widthPx: wPx, heightPx: hPx, effectiveDpi, size, bleedMm: spec.bleedMm, dpi: spec.dpi };
+  return { path, fileName, widthPx: wPx, heightPx: hPx, effectiveDpi, size, bleedMm: spec.bleedMm, dpi: spec.dpi, fromPdf };
 }
 
 async function thumbnail(originalBuffer) {
+  if (isPdf(originalBuffer)) {
+    const r = await renderPdf(originalBuffer, { longSide: 420 });
+    return sharp(r.data, { raw: { width: r.width, height: r.height, channels: r.channels } }).png().toBuffer();
+  }
   return sharp(originalBuffer, { limitInputPixels: false })
     .rotate().resize(420, 420, { fit: 'inside' }).flatten({ background: '#ffffff' }).png().toBuffer();
 }
@@ -134,7 +149,7 @@ async function buildWorkOrderPdf(order, lines) {
         ['Visuel', `${line.artwork.title} — ${line.artwork.slug}`],
         ['Fichier HD', hd.fileName],
         ['Fichier', `${hd.widthPx} × ${hd.heightPx} px, ${hd.dpi} dpi, TIFF sRGB`],
-        ['Résolution source', `${hd.effectiveDpi} dpi effectifs` + (hd.effectiveDpi < hd.dpi * 0.7 ? '  ATTENTION : À VÉRIFIER AVANT IMPRESSION' : '')],
+        ['Résolution source', (hd.fromPdf ? `PDF rendu à ${hd.effectiveDpi} dpi (PDF source joint au mail)` : `${hd.effectiveDpi} dpi effectifs`) + (hd.effectiveDpi < hd.dpi * 0.7 ? '  ATTENTION : À VÉRIFIER AVANT IMPRESSION' : '')],
       ];
       let y = y0 + 32;
       for (const [k, v] of rows) {
