@@ -18,7 +18,12 @@ const local = (bucket, p) => path.join(config.localStorageDir, bucket, p);
 async function upload(bucket, p, buffer, contentType) {
   if (sb) {
     const { error } = await sb.storage.from(bucket).upload(p, buffer, { contentType, upsert: true });
-    if (error) throw new Error(`[storage] upload ${p}: ${error.message}`);
+    if (error) {
+      const hint = /bucket not found/i.test(error.message) ? ` — l'espace « ${bucket} » n'existe pas dans Supabase Storage`
+        : /invalid path|invalid url/i.test(error.message) ? ' — vérifier SUPABASE_URL (https://xxxx.supabase.co, rien après)'
+        : /signature|jwt|unauthorized|invalid key/i.test(error.message) ? ' — clé SUPABASE_SERVICE_ROLE_KEY refusée' : '';
+      throw new Error(`[storage] envoi vers « ${bucket} » impossible : ${error.message}${hint}`);
+    }
     return p;
   }
   await fs.mkdir(path.dirname(local(bucket, p)), { recursive: true });
@@ -52,4 +57,14 @@ function publicUrl(bucket, p) {
   return `${process.env.PUBLIC_API_URL || ''}/local-storage/${bucket}/${p}`;
 }
 
-module.exports = { upload, download, signedUrl, publicUrl };
+/** Diagnostic : les deux espaces existent-ils ? (sans exposer de donnée) */
+async function check(buckets) {
+  if (!sb) return 'local';
+  const { data, error } = await sb.storage.listBuckets();
+  if (error) return `erreur : ${error.message}`;
+  const names = (data || []).map(b => b.name);
+  const missing = buckets.filter(b => !names.includes(b));
+  return missing.length ? `espace(s) manquant(s) : ${missing.join(', ')}` : 'ok';
+}
+
+module.exports = { upload, download, signedUrl, publicUrl, check };

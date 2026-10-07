@@ -69,7 +69,8 @@ app.get('/health', async (req, res) => {
       : /ssl|certificate/i.test(m) ? 'problème SSL'
       : 'autre erreur : ' + (e.code || 'inconnue');
   }
-  res.json({ ok: true, stripe: !!stripe, db });
+  const store = await storage.check([config.storageBucketPrivate, config.storageBucketPublic]).catch(e => 'erreur : ' + e.message);
+  res.json({ ok: true, stripe: !!stripe, db, storage: store });
 });
 
 app.get('/api/catalog', wrap(async (req, res) => {

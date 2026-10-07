@@ -8,10 +8,11 @@ module.exports = {
   brand: 'artaluz',
   frontendUrl: env('FRONTEND_URL', 'http://localhost:8080'),
   databaseUrl: env('DATABASE_URL', ''),           // chaîne de connexion Postgres Supabase (Settings > Database)
-  supabaseUrl: env('SUPABASE_URL', ''),
+  // Seule l'origine compte (https://xxxx.supabase.co) : un « / » final ou « /rest/v1 » casse les appels Storage
+  supabaseUrl: (() => { const u = env('SUPABASE_URL', '').trim(); try { return u ? new URL(u).origin : ''; } catch { return u; } })(),
   supabaseServiceKey: env('SUPABASE_SERVICE_ROLE_KEY', ''),
-  storageBucketPrivate: env('STORAGE_BUCKET_PRIVATE', 'artaluz-private'),  // originaux + fichiers HD
-  storageBucketPublic: env('STORAGE_BUCKET_PUBLIC', 'artaluz-public'),     // aperçus filigranés
+  storageBucketPrivate: env('STORAGE_BUCKET_PRIVATE', 'artaluz-private').trim(),  // originaux + fichiers HD
+  storageBucketPublic: env('STORAGE_BUCKET_PUBLIC', 'artaluz-public').trim(),     // aperçus filigranés
   localStorageDir: env('LOCAL_STORAGE_DIR', ''),  // dev uniquement : stockage disque au lieu de Supabase
   stripeSecretKey: env('STRIPE_SECRET_KEY', ''),
   stripeWebhookSecret: env('STRIPE_WEBHOOK_SECRET', ''),
