@@ -75,7 +75,7 @@ app.get('/health', async (req, res) => {
 
 app.get('/api/catalog', wrap(async (req, res) => {
   const [rel, occ, fig, prod, fin] = await Promise.all([
-    db.query('select id, name, calendar, figure_label from religions where active order by sort_order'),
+    db.query('select id, name, calendar, figure_label from religions where active order by name'),
     db.query('select id, religion_id, name, kind from occasions where active order by religion_id, sort_order'),
     db.query('select id, religion_id, name, feast_month, feast_day from figures where active order by religion_id, name'),
     db.query(`select ref, support, variant, format_label, width_cm, height_cm, price_ttc, min_qty

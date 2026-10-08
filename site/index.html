@@ -4,81 +4,169 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Artaluz — Art sacré imprimé pour vos fêtes religieuses</title>
-<meta name="description" content="Décorations religieuses imprimées en France : bâches, stickers, magnets, posters et tableaux en aluminium pour l'islam, le judaïsme, le catholicisme, le protestantisme et le bouddhisme.">
+<meta name="description" content="Décorations religieuses imprimées en France : bâches, stickers, magnets, posters et tableaux en aluminium pour le bouddhisme, le catholicisme, l'islam, le judaïsme et le protestantisme.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Marcellus&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Forum&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/app.css">
 <script src="/assets/config.js"></script>
 </head>
 <body>
 <main>
-  <section class="hero wrap">
-    <h1>L'art sacré de chaque tradition, imprimé pour vos fêtes</h1>
-    <p class="lead">Choisissez votre tradition, puis la fête ou la figure qui vous est chère. Chaque visuel s'imprime sur bâche, sticker, magnet, poster ou tableau en aluminium.</p>
-    <div class="arches" id="arches" aria-label="Choisir une tradition"></div>
+  <section class="hero">
+    <svg class="halo" viewBox="0 0 1200 900" aria-hidden="true">
+      <g fill="none" stroke="#B98B2E">
+        <circle cx="600" cy="420" r="190" stroke-opacity=".55"/><circle cx="600" cy="420" r="260" stroke-opacity=".4"/>
+        <circle cx="600" cy="420" r="340" stroke-opacity=".28"/><circle cx="600" cy="420" r="430" stroke-opacity=".18"/>
+        <path stroke-opacity=".22" d="M600 0V200M600 640V900M180 420H380M820 420H1020M303 123l142 142M755 575l142 142M897 123L755 265M445 575L303 717"/>
+      </g>
+    </svg>
+    <div class="hero-inner">
+      <div class="carousel" id="carousel" role="region" aria-roledescription="carrousel" aria-label="Une création par tradition">
+        <div class="alcove"><div class="slides" id="slides"><div class="slide-empty">Chargement des créations…</div></div></div>
+        <div class="carousel-caption" aria-live="polite" id="caption"></div>
+        <div class="carousel-controls" id="controls" hidden>
+          <button class="arrow" type="button" id="prev" aria-label="Création précédente"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+          <div class="dots" id="dots"></div>
+          <button class="arrow" type="button" id="next" aria-label="Création suivante"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        </div>
+      </div>
+      <div id="star" style="margin-top:22px"></div>
+      <h1>Que chaque fête rayonne dans votre maison</h1>
+      <p class="lead">L'art sacré de cinq traditions, imprimé à la commande dans notre atelier : bâches, stickers, magnets, posters et tableaux en aluminium.</p>
+      <a class="btn" href="#traditions">Choisir ma tradition</a>
+    </div>
+  </section>
+
+  <section class="band section" id="traditions" aria-labelledby="t-trad">
+    <div class="wrap">
+      <div class="section-head"><h2 id="t-trad">Cinq traditions, une même lumière</h2>
+        <p>Choisissez une tradition pour découvrir ses fêtes, ses figures et ses collections.</p></div>
+      <div class="medallions" id="medallions"></div>
+    </div>
   </section>
 
   <section class="section wrap" aria-labelledby="t-fetes">
-    <div class="section-head"><h2 id="t-fetes">Les prochaines fêtes</h2><span class="muted">Dates limites pour une livraison à temps</span></div>
+    <div class="section-head"><h2 id="t-fetes">Les prochaines fêtes</h2>
+      <p>Pour être livré à temps, commandez avant la date indiquée sous chaque flamme.</p></div>
     <div class="feasts" id="feasts"><div class="feast empty">Chargement du calendrier…</div></div>
   </section>
 
-  <section class="section wrap" aria-labelledby="t-sel">
+  <section class="section wrap" aria-labelledby="t-sel" style="padding-top:0">
     <div class="section-head"><h2 id="t-sel">Notre sélection</h2></div>
     <div class="grid" id="featured"></div>
   </section>
 
-  <section class="section wrap" aria-labelledby="t-sup">
-    <div class="section-head"><h2 id="t-sup">Cinq supports, un même visuel</h2></div>
-    <div class="supports" id="supports"></div>
+  <section class="band section" aria-labelledby="t-sup">
+    <div class="wrap">
+      <div class="section-head"><h2 id="t-sup">Un même visuel, cinq supports</h2></div>
+      <div class="supports" id="supports"></div>
+    </div>
   </section>
 </main>
 <script type="module">
-import { chrome, catalog, api, esc, eur, feastCard, artworkCard, RELIGION_COLORS, SUPPORT_LABELS } from '/assets/app.js';
+import { chrome, catalog, api, esc, eur, feastCard, artworkCard, RELIGIONS, RELIGION_COLORS, RELIGION_ICONS, SUPPORT_LABELS, STAR, fmtDay } from '/assets/app.js';
 chrome();
+document.getElementById('star').innerHTML = STAR;
+const relById = Object.fromEntries(RELIGIONS.map(r => [r.id, r]));
 
 const SUPPORT_TEXT = {
-  bache: 'Pour la façade, la cour ou la salle de prière. Œillets en option.',
-  sticker: 'Pour la porte, la vitre ou le cahier. Brillant ou mat.',
-  magnet: 'Pour le réfrigérateur ou le tableau du bureau.',
-  poster: 'Pour la chambre ou la salle de catéchisme.',
-  alu: 'Un tableau rigide qui traverse les années. Cadre en option.',
+  bache: 'Pour la façade, la cour ou la salle de prière',
+  alu: 'Un tableau rigide qui traverse les années',
+  poster: 'Pour la chambre ou la salle de catéchisme',
+  magnet: 'Pour le réfrigérateur ou le tableau',
+  sticker: 'Pour la porte, la vitre ou le cahier',
 };
 
-(async () => {
-  let cat;
-  try { cat = await catalog(); } catch (e) {
-    document.getElementById('arches').innerHTML = `<div class="empty-state">Le catalogue est momentanément indisponible. Réessayez dans un instant.</div>`;
-    return;
+// ---------------------------------------------------------------------------
+// Carrousel : au moins une création par tradition, dans l'ordre alphabétique
+// ---------------------------------------------------------------------------
+async function buildCarousel() {
+  const lists = await Promise.all(RELIGIONS.map(r => api(`/api/artworks?religion=${r.id}&limit=3`).catch(() => [])));
+  const slides = [];
+  const seen = new Set();
+  for (let round = 0; round < 2; round++) {          // 1re passe : une par tradition ; 2e passe : une de plus si disponible
+    RELIGIONS.forEach((r, i) => {
+      const a = lists[i].find(x => !seen.has(x.slug));
+      if (a && (round === 0 || slides.length < 10)) { seen.add(a.slug); slides.push({ ...a, rel: r }); }
+    });
   }
-  const relById = Object.fromEntries(cat.religions.map(r => [r.id, r]));
+  slides.sort((a, b) => RELIGIONS.indexOf(a.rel) - RELIGIONS.indexOf(b.rel));
+  const box = document.getElementById('slides');
+  if (!slides.length) { box.innerHTML = `<div class="slide-empty">Les premières créations arrivent très bientôt.</div>`; return; }
+
+  box.innerHTML = slides.map((s, i) => `<a class="slide${i === 0 ? ' on' : ''}" href="/visuel/${encodeURIComponent(s.slug)}"
+      role="group" aria-roledescription="diapositive" aria-label="${i + 1} sur ${slides.length}" ${i ? 'tabindex="-1" aria-hidden="true"' : ''}>
+      <img src="${esc(s.preview)}" alt="${esc(s.title)} — ${esc(s.rel.name)}" ${i ? 'loading="lazy"' : ''}></a>`).join('');
+  const dots = document.getElementById('dots');
+  dots.innerHTML = slides.map((s, i) => `<button class="dot" type="button" style="--c:${RELIGION_COLORS[s.rel.id]}"
+      aria-label="${esc(s.rel.name)} : ${esc(s.title)}" aria-current="${i === 0}"><span></span></button>`).join('');
+  document.getElementById('controls').hidden = slides.length < 2;
+
+  let cur = 0, timer = null, paused = false;
+  const caption = document.getElementById('caption');
+  const show = n => {
+    cur = (n + slides.length) % slides.length;
+    box.querySelectorAll('.slide').forEach((el, i) => {
+      el.classList.toggle('on', i === cur);
+      el.toggleAttribute('aria-hidden', i !== cur);
+      if (i === cur) el.removeAttribute('tabindex'); else el.setAttribute('tabindex', '-1');
+    });
+    dots.querySelectorAll('.dot').forEach((d, i) => d.setAttribute('aria-current', i === cur));
+    const s = slides[cur];
+    caption.innerHTML = `<div class="t">${esc(s.title)}</div><div class="r">${esc(s.rel.name)} · ${esc(s.artist)}</div>`;
+  };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const start = () => { stop(); if (!reduce && !paused && slides.length > 1) timer = setInterval(() => show(cur + 1), 5000); };
+  const stop = () => { clearInterval(timer); timer = null; };
+  show(0); start();
+
+  document.getElementById('prev').addEventListener('click', () => { show(cur - 1); start(); });
+  document.getElementById('next').addEventListener('click', () => { show(cur + 1); start(); });
+  dots.addEventListener('click', e => { const b = e.target.closest('.dot'); if (!b) return; show([...dots.children].indexOf(b)); start(); });
+  const car = document.getElementById('carousel');
+  car.addEventListener('mouseenter', () => { paused = true; stop(); });
+  car.addEventListener('mouseleave', () => { paused = false; start(); });
+  car.addEventListener('focusin', () => { paused = true; stop(); });
+  car.addEventListener('focusout', () => { paused = false; start(); });
+  document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
+}
+
+(async () => {
+  buildCarousel();
   const holidays = await api('/api/holidays').catch(() => []);
   const nextByRel = {};
   for (const h of holidays) nextByRel[h.religion_id] ||= h;
 
-  // Arches : une porte par tradition, avec la prochaine fête
-  const covers = await Promise.all(cat.religions.map(r => api(`/api/artworks?religion=${r.id}&limit=1`).catch(() => [])));
-  document.getElementById('arches').innerHTML = cat.religions.map((r, i) => {
+  document.getElementById('medallions').innerHTML = RELIGIONS.map(r => {
     const n = nextByRel[r.id];
-    const cover = covers[i][0];
-    return `<a class="arch" style="--c:${RELIGION_COLORS[r.id]}" href="/religion/${r.id}">
-      ${cover ? `<img src="${esc(cover.preview)}" alt="">` : ''}
+    const when = n ? `${n.approximate ? 'vers le ' : 'le '}${fmtDay(new Date(n.starts_on + 'T12:00:00'))}` : '';
+    return `<a class="medallion" href="/religion/${r.id}" style="--c:${RELIGION_COLORS[r.id]}">
+      <span class="ring"><span class="core">${RELIGION_ICONS[r.id]}</span></span>
       <span class="name">${esc(r.name)}</span>
-      <span class="next">${n ? `Prochaine fête : ${esc(n.name)}` : esc(r.figure_label)}</span></a>`;
+      <span class="next">${n ? `${esc(n.name)}, ${when}` : '&nbsp;'}</span></a>`;
   }).join('');
 
-  document.getElementById('feasts').innerHTML = holidays.length
-    ? holidays.slice(0, 8).map(h => feastCard(h, relById)).join('')
+  // Une même fête le même jour dans deux traditions (Noël, Pâques…) n'apparaît qu'une fois
+  const merged = [];
+  for (const h of holidays) {
+    const twin = merged.find(m => m.starts_on === h.starts_on && (m.name.includes(h.name) || h.name.includes(m.name)));
+    if (twin) { twin.rels.push(h.religion_id); if (h.name.length < twin.name.length) twin.name = h.name; }
+    else merged.push({ ...h, rels: [h.religion_id] });
+  }
+  const relNames = m => ({ name: m.rels.map(id => relById[id].name).sort().join(' · ') });
+  document.getElementById('feasts').innerHTML = merged.length
+    ? merged.slice(0, 6).map(m => feastCard(m, { [m.religion_id]: relNames(m) })).join('')
     : `<div class="feast empty">Le calendrier des fêtes arrive bientôt.</div>`;
 
-  const featured = await api('/api/artworks?limit=12').catch(() => []);
+  const featured = await api('/api/artworks?limit=8').catch(() => []);
   document.getElementById('featured').innerHTML = featured.length ? featured.map(artworkCard).join('')
-    : `<div class="empty-state">Les premières collections arrivent très bientôt.</div>`;
+    : `<div class="empty-state" style="grid-column:1/-1">Les premières collections arrivent très bientôt.</div>`;
 
+  const cat = await catalog().catch(() => null);
   const from = {};
-  for (const p of cat.products) from[p.support] = Math.min(from[p.support] ?? Infinity, p.price_ttc * p.min_qty);
-  document.getElementById('supports').innerHTML = Object.keys(SUPPORT_LABELS).map(s => `<div class="support">
-    <h3>${SUPPORT_LABELS[s]}</h3><p class="muted">${SUPPORT_TEXT[s]}</p>
+  for (const p of cat?.products || []) from[p.support] = Math.min(from[p.support] ?? Infinity, p.price_ttc * p.min_qty);
+  document.getElementById('supports').innerHTML = ['bache', 'alu', 'poster', 'magnet', 'sticker'].map(s => `<div class="support">
+    <h3>${SUPPORT_LABELS[s]}</h3><p>${SUPPORT_TEXT[s]}</p>
     ${from[s] ? `<div class="from">dès ${eur(from[s])}</div>` : ''}</div>`).join('');
 })();
 </script>

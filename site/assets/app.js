@@ -2,10 +2,27 @@
 const API = window.ARTALUZ_API;
 const LEAD_DAYS = window.ARTALUZ_LEAD_DAYS || 8;
 
-export const RELIGION_COLORS = {
-  islam: 'var(--islam)', judaisme: 'var(--judaisme)', catholicisme: 'var(--catholicisme)',
-  protestantisme: 'var(--protestantisme)', bouddhisme: 'var(--bouddhisme)',
+// Les cinq traditions, par ordre alphabétique (menu, accueil, pied de page)
+export const RELIGIONS = [
+  { id: 'bouddhisme', name: 'Bouddhisme' },
+  { id: 'catholicisme', name: 'Catholicisme' },
+  { id: 'islam', name: 'Islam' },
+  { id: 'judaisme', name: 'Judaïsme' },
+  { id: 'protestantisme', name: 'Protestantisme' },
+];
+export const RELIGION_COLORS = Object.fromEntries(RELIGIONS.map(r => [r.id, `var(--${r.id})`]));
+
+// Emblèmes (traits dorés sur la couleur de la tradition)
+const G = '#F2DFA9';
+export const RELIGION_ICONS = {
+  bouddhisme: `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="${G}" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2"/><path d="M12 3.5V20.5M3.5 12H20.5M6 6l12 12M18 6L6 18"/></g></svg>`,
+  catholicisme: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3V21M6 8.5H18" stroke="${G}" stroke-width="2" stroke-linecap="round"/></svg>`,
+  islam: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4a9 9 0 1 0 0 16 10 10 0 0 1 0-16z" fill="${G}"/><path d="M17.6 8.6l.9 2 2.1.2-1.6 1.4.5 2.1-1.9-1.1-1.9 1.1.5-2.1-1.6-1.4 2.1-.2z" fill="${G}"/></svg>`,
+  judaisme: `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="${G}" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l8 14H4z"/><path d="M12 21L4 7h16z"/></g></svg>`,
+  protestantisme: `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="${G}" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 6V18M7.5 10H16.5"/></g></svg>`,
 };
+export const STAR = `<svg class="star" viewBox="0 0 40 40" width="30" height="30" aria-hidden="true"><path d="M20 1l3.5 15.5L39 20l-15.5 3.5L20 39l-3.5-15.5L1 20l15.5-3.5z" fill="#B98B2E"/></svg>`;
+const FLAME = `<svg class="flame" viewBox="0 0 24 36" aria-hidden="true"><path d="M12 2C17 10 19 15 19 20a7 7 0 0 1-14 0C5 15 8 10 12 2z" fill="#E1A93B"/><path d="M12 14c2.5 4 3 6 3 8a3 3 0 0 1-6 0c0-2 1-4 3-8z" fill="#FBFAF7"/><rect x="11" y="29" width="2" height="6" fill="#1C2A3A"/></svg>`;
 export const SUPPORT_LABELS = { bache: 'Bâche', sticker: 'Sticker', magnet: 'Magnet', poster: 'Poster', alu: 'Tableau alu' };
 
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -56,18 +73,18 @@ export const fmtDay = (d, opts = { day: 'numeric', month: 'long' }) => d.toLocal
 
 export function feastCard(h, religionsById = {}) {
   const start = parseDay(h.starts_on);
-  const days = Math.round((start - today()) / DAY);
   const deadline = new Date(start.getTime() - LEAD_DAYS * DAY);
   const left = Math.round((deadline - today()) / DAY);
-  const when = days <= 0 ? 'En ce moment' : days === 1 ? 'Demain' : `Dans ${days} jours`;
   const deadlineTxt = left < 0 ? 'Livraison avant la fête non garantie'
-    : left === 0 ? 'Commandez aujourd\'hui pour être livré à temps'
+    : left === 0 ? 'Commandez aujourd\'hui'
     : `Commandez avant le ${fmtDay(deadline)}`;
   const rel = religionsById[h.religion_id];
+  const when = (h.approximate ? 'Vers le ' : '') + fmtDay(start, h.approximate ? { day: 'numeric', month: 'long' } : { weekday: 'long', day: 'numeric', month: 'long' });
   return `<a class="feast" style="--c:${RELIGION_COLORS[h.religion_id]}" href="/religion/${h.religion_id}?fete=${encodeURIComponent(h.occasion_id)}">
-    <div class="when">${when} · ${fmtDay(start, { weekday: 'long', day: 'numeric', month: 'long' })}${h.approximate ? ' (±1 jour)' : ''}</div>
+    ${FLAME}
     <div class="what">${esc(h.name)}</div>
-    ${rel ? `<div class="when">${esc(rel.name)}</div>` : ''}
+    <div class="when">${esc(when.charAt(0).toUpperCase() + when.slice(1))}${h.approximate ? ' (±1 jour)' : ''}</div>
+    ${rel ? `<div class="rel">${esc(rel.name)}</div>` : ''}
     <div class="deadline ${left >= 0 && left <= 5 ? 'soon' : ''}">${deadlineTxt}</div>
   </a>`;
 }
@@ -81,26 +98,24 @@ export function artworkCard(a) {
 // ---------------------------------------------------------------------------
 // En-tête et pied de page
 // ---------------------------------------------------------------------------
-export async function chrome(current = '') {
+export function chrome(current = '') {
+  const link = r => `<a class="rel" href="/religion/${r.id}"${r.id === current ? ' aria-current="page"' : ''}>${esc(r.name)}</a>`;
   const head = document.createElement('header');
   head.className = 'site-head';
   head.innerHTML = `<div class="wrap">
-    <a class="logo" href="/"><img src="/assets/logo.png" alt="Artaluz" width="485" height="132" onerror="this.replaceWith('Artaluz')"></a>
-    <nav class="nav" aria-label="Religions"></nav>
-    <a class="cart-link" href="/panier/"><span>Panier</span><span class="cart-count">0</span></a></div>`;
+    <nav class="nav left" aria-label="Traditions">${RELIGIONS.slice(0, 3).map(link).join('')}</nav>
+    <a class="logo" href="/"><picture><source media="(max-width: 960px)" srcset="/assets/logo.png"><img src="/assets/logo-full.png" alt="Artaluz — des décors pour célébrer" width="485" height="163"></picture></a>
+    <nav class="nav right" aria-label="Traditions et panier">${RELIGIONS.slice(3).map(link).join('')}
+      <a class="cart-link" href="/panier/"><span>Panier</span><span class="cart-count">0</span></a></nav></div>
+    <nav class="nav-mobile" aria-label="Traditions">${RELIGIONS.map(link).join('')}</nav>`;
   document.body.prepend(head);
   const foot = document.createElement('footer');
   foot.className = 'site-foot';
   foot.innerHTML = `<div class="wrap">
-    <div><div class="logo">Artaluz</div><p>Art sacré imprimé dans notre atelier de Seine-Saint-Denis : bâches, stickers, magnets, posters et tableaux en aluminium.</p></div>
-    <div class="foot-rel"></div>
+    <div><div class="brand">Artaluz <small>— des décors pour célébrer</small></div>
+      <p style="margin-top:12px">Art sacré imprimé à la commande dans notre atelier de Stains (93) : bâches, stickers, magnets, posters et tableaux en aluminium. Livraison offerte dès 75 € d'achat.</p></div>
+    <div>${RELIGIONS.map(r => `<a href="/religion/${r.id}">${esc(r.name)}</a>`).join('')}</div>
     <div><a href="/artistes/">Proposer vos créations</a><a href="/cgv/">Conditions de vente</a><a href="/mentions-legales/">Mentions légales</a><a href="mailto:contact@artaluz.com">contact@artaluz.com</a></div></div>`;
   document.body.append(foot);
   renderCartCount();
-  try {
-    const { religions } = await catalog();
-    const links = religions.map(r => `<a href="/religion/${r.id}"${r.id === current ? ' aria-current="page"' : ''}>${esc(r.name)}</a>`).join('');
-    head.querySelector('.nav').innerHTML = links;
-    foot.querySelector('.foot-rel').innerHTML = links;
-  } catch { /* API indisponible : la navigation reste vide */ }
 }

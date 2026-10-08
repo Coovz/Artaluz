@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Artaluz</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Marcellus&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Forum&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/app.css">
 <script src="/assets/config.js"></script>
 </head>
@@ -14,6 +14,7 @@
   <section class="rel-banner" id="banner">
     <div class="wrap">
       <div class="crumbs"><a href="/">Accueil</a></div>
+      <div class="emblem" id="emblem"></div>
       <h1 id="title">&nbsp;</h1>
       <div class="feasts" id="feasts"></div>
     </div>
@@ -25,7 +26,7 @@
   </section>
 </main>
 <script type="module">
-import { chrome, catalog, api, esc, feastCard, artworkCard, RELIGION_COLORS } from '/assets/app.js';
+import { chrome, catalog, api, esc, feastCard, artworkCard, RELIGION_COLORS, RELIGION_ICONS } from '/assets/app.js';
 
 const relId = location.pathname.split('/').filter(Boolean)[1] || new URLSearchParams(location.search).get('id');
 chrome(relId);
@@ -40,6 +41,7 @@ const PAGE = 24;
   document.title = `${rel.name} — décorations et art sacré imprimés | Artaluz`;
   document.documentElement.style.setProperty('--c', RELIGION_COLORS[rel.id]);
   document.getElementById('title').textContent = rel.name;
+  document.getElementById('emblem').innerHTML = RELIGION_ICONS[rel.id] || '';
 
   const holidays = await api(`/api/holidays?religion=${rel.id}`).catch(() => []);
   document.getElementById('feasts').innerHTML = holidays.length
