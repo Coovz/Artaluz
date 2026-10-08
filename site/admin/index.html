@@ -20,6 +20,12 @@
   .admin-grid { display: grid; grid-template-columns: 420px 1fr; gap: 32px; align-items: start; }
   @media (max-width: 960px) { .admin-grid { grid-template-columns: 1fr; } .tagrow { grid-template-columns: 1fr; } }
   .tablewrap { overflow-x: auto; }
+  .drop { display: block; position: relative; border: 2px dashed var(--line); border-radius: var(--radius); padding: 36px 20px; text-align: center; background: var(--paper); cursor: pointer; }
+  .drop.over { border-color: var(--gold); background: #FFFCF4; }
+  .bulk td input[type=text] { width: 100%; min-width: 180px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+  .bulk td select { width: 100%; min-width: 130px; }
+  .st { font-size: .85rem; white-space: nowrap; }
+  .st.ok { color: var(--ok); } .st.err { color: var(--danger); white-space: normal; min-width: 220px; } .st.run { color: var(--gold-deep); }
 </style>
 </head>
 <body>
@@ -34,6 +40,7 @@
   <div id="app" hidden>
     <div class="tabs" role="tablist">
       <button class="chip" role="tab" data-tab="visuels" aria-pressed="true">Visuels</button>
+      <button class="chip" role="tab" data-tab="import" aria-pressed="false">Import groupé</button>
       <button class="chip" role="tab" data-tab="commandes" aria-pressed="false">Commandes</button>
     </div>
 
@@ -51,6 +58,24 @@
         <button class="btn gold block" id="up-btn">Mettre en ligne</button>
       </form>
       <div class="tablewrap"><table><thead><tr><th></th><th>Visuel</th><th>Classement</th><th>Taille</th><th>Statut</th></tr></thead><tbody id="arts"></tbody></table></div>
+    </section>
+
+    <section data-panel="import" hidden>
+      <div class="panel" style="margin-bottom:20px">
+        <h3 style="margin-bottom:8px">Importer plusieurs visuels d'un coup</h3>
+        <p class="muted" style="margin-bottom:16px">Déposez vos fichiers (JPEG, PNG, TIFF ou PDF HD). Le classement est déduit du nom du fichier, par exemple
+          <code>artaluz-ramadan-01-nuit-orientale-paysage.jpg</code> → fête « Ramadan », titre « Nuit orientale (paysage) ». Vérifiez et corrigez chaque ligne avant de lancer l'import.</p>
+        <label class="drop" id="drop"><input type="file" id="bulk-files" multiple accept="application/pdf,.pdf,image/jpeg,image/png,image/tiff,image/webp" class="sr-only">
+          <strong>Glissez vos fichiers ici</strong><br><span class="muted">ou cliquez pour les choisir</span></label>
+      </div>
+      <div id="bulk-zone" hidden>
+        <div class="tablewrap"><table class="bulk"><thead><tr><th>Fichier</th><th>Titre</th><th>Religion</th><th>Fête</th><th>Figure</th><th>Accueil</th><th>État</th><th></th></tr></thead><tbody id="bulk-rows"></tbody></table></div>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:18px;flex-wrap:wrap">
+          <button class="btn gold" id="bulk-go" type="button">Mettre en ligne tous les visuels</button>
+          <button class="btn ghost" id="bulk-clear" type="button">Vider la liste</button>
+          <span id="bulk-sum" class="muted" aria-live="polite"></span>
+        </div>
+      </div>
     </section>
 
     <section data-panel="commandes" hidden class="tablewrap">
@@ -135,6 +160,79 @@ async function loadArts() {
 document.getElementById('arts').addEventListener('change', async e => {
   const s = e.target.closest('[data-art]'); if (!s) return;
   await adm(`/api/admin/artworks/${encodeURIComponent(s.dataset.art)}`, { method: 'PATCH', body: JSON.stringify({ status: s.value }) });
+});
+
+// ---------------------------------------------------------------------------
+// Import groupé
+// ---------------------------------------------------------------------------
+let bulk = []; // { file, title, religion, occasion, figure, featured, state, msg }
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+function guess(name) {
+  const base = name.replace(/\.[a-z0-9]+$/i, '').toLowerCase();
+  const has = id => new RegExp(`(^|[-_ ])${id.replace(/-/g, '[-_ ]')}([-_ ]|$)`).test(base);
+  const byLen = arr => [...arr].sort((a, b) => b.id.length - a.id.length);
+  const occ = byLen(cat.occasions).find(o => has(o.id));
+  const fig = byLen(cat.figures).find(f => has(f.id));
+  const rel = occ?.religion_id || fig?.religion_id || cat.religions.find(r => has(r.id))?.id || '';
+  const orient = /(^|[-_ ])(portrait|vertical)([-_ ]|$)/.test(base) ? ' (vertical)' : /(^|[-_ ])(paysage|horizontal|landscape)([-_ ]|$)/.test(base) ? ' (paysage)' : '';
+  let words = base;
+  for (const id of ['artaluz', occ?.id, fig?.id, rel].filter(Boolean)) words = words.replace(new RegExp(`(^|[-_ ])${id.replace(/-/g, '[-_ ]')}(?=[-_ ]|$)`, 'g'), ' ');
+  words = words.replace(/(^|[-_ ])(portrait|vertical|paysage|horizontal|landscape|hd|\d+)(?=[-_ ]|$)/g, ' ').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return { title: cap(words || base) + orient, religion: rel, occasion: occ?.id || '', figure: fig?.id || '' };
+}
+function addFiles(files) {
+  for (const f of files) if (!bulk.some(b => b.file.name === f.name && b.file.size === f.size)) bulk.push({ file: f, ...guess(f.name), featured: false, state: 'pret', msg: '' });
+  renderBulk();
+}
+function opts(list, val, empty) { return `<option value="">${empty}</option>` + list.map(x => `<option value="${x.id}"${x.id === val ? ' selected' : ''}>${esc(x.name)}</option>`).join(''); }
+function renderBulk() {
+  document.getElementById('bulk-zone').hidden = !bulk.length;
+  document.getElementById('bulk-rows').innerHTML = bulk.map((b, i) => {
+    const lock = b.state === 'ok' || b.state === 'run' ? ' disabled' : '';
+    const st = { pret: '<span class="st">À importer</span>', run: '<span class="st run">Envoi…</span>', ok: `<span class="st ok">En ligne</span>`, err: `<span class="st err">${esc(b.msg)}</span>` }[b.state];
+    return `<tr data-i="${i}">
+      <td><span title="${esc(b.file.name)}">${esc(b.file.name.length > 34 ? b.file.name.slice(0, 32) + '…' : b.file.name)}</span><br><span class="muted" style="font-size:.8rem">${(b.file.size / 1048576).toFixed(1)} Mo</span></td>
+      <td><input type="text" data-k="title" value="${esc(b.title)}" aria-label="Titre"${lock}></td>
+      <td><select data-k="religion" aria-label="Religion"${lock}>${opts(cat.religions, b.religion, 'À choisir')}</select></td>
+      <td><select data-k="occasion" aria-label="Fête"${lock}>${opts(cat.occasions.filter(o => o.religion_id === b.religion), b.occasion, 'Aucune')}</select></td>
+      <td><select data-k="figure" aria-label="Figure"${lock}>${opts(cat.figures.filter(f => f.religion_id === b.religion), b.figure, 'Aucune')}</select></td>
+      <td><input type="checkbox" data-k="featured" aria-label="Mettre en avant"${b.featured ? ' checked' : ''}${lock}></td>
+      <td>${st}</td>
+      <td>${b.state === 'ok' ? '' : `<button type="button" class="btn ghost" data-rm="${i}" aria-label="Retirer ${esc(b.file.name)}" style="padding:6px 12px"${lock}>×</button>`}</td></tr>`;
+  }).join('');
+  const ok = bulk.filter(b => b.state === 'ok').length, err = bulk.filter(b => b.state === 'err').length;
+  document.getElementById('bulk-sum').textContent = `${bulk.length} fichier(s) · ${ok} en ligne${err ? ` · ${err} en erreur` : ''}`;
+}
+const drop = document.getElementById('drop');
+document.getElementById('bulk-files').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+document.getElementById('bulk-rows').addEventListener('input', e => {
+  const tr = e.target.closest('tr'); const b = bulk[Number(tr.dataset.i)]; const k = e.target.dataset.k; if (!k) return;
+  b[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  if (k === 'religion') { b.occasion = ''; b.figure = ''; renderBulk(); }
+});
+document.getElementById('bulk-rows').addEventListener('click', e => {
+  const r = e.target.closest('[data-rm]'); if (!r) return; bulk.splice(Number(r.dataset.rm), 1); renderBulk();
+});
+document.getElementById('bulk-clear').addEventListener('click', () => { bulk = bulk.filter(b => b.state === 'run'); renderBulk(); });
+document.getElementById('bulk-go').addEventListener('click', async () => {
+  const btn = document.getElementById('bulk-go');
+  const todo = bulk.filter(b => b.state === 'pret' || b.state === 'err');
+  const missing = todo.find(b => !b.title.trim() || !b.religion);
+  if (missing) { missing.state = 'err'; missing.msg = 'Titre et religion obligatoires'; renderBulk(); return; }
+  btn.disabled = true;
+  for (const b of todo) {            // un fichier à la fois : l'API ménage sa mémoire
+    b.state = 'run'; renderBulk();
+    const fd = new FormData();
+    fd.append('file', b.file); fd.append('title', b.title.trim()); fd.append('featured', b.featured ? 'true' : 'false');
+    fd.append('tags', JSON.stringify([{ religion: b.religion, occasion: b.occasion || null, figure: b.figure || null }]));
+    try { await adm('/api/admin/artworks', { method: 'POST', body: fd }); b.state = 'ok'; }
+    catch (err) { b.state = 'err'; b.msg = err.message; }
+    renderBulk();
+  }
+  btn.disabled = false; loadArts();
 });
 
 async function loadOrders() {
