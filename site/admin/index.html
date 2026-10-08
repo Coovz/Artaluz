@@ -114,7 +114,9 @@ document.getElementById('upload').addEventListener('submit', async e => {
     const out = await adm('/api/admin/artworks', { method: 'POST', body: fd });
     const total = cat.products.length;
     const size = out.format === 'pdf' ? `PDF, page ${String(out.pageCm.w).replace('.', ',')} × ${String(out.pageCm.h).replace('.', ',')} cm` : `${out.width} × ${out.height} px`;
-    const warn = out.format === 'pdf' ? `<br>Les images intégrées au PDF ne sont pas contrôlées : vérifiez leur résolution pour les grands formats.${out.pages > 1 ? ` Seule la page 1 sur ${out.pages} est utilisée.` : ''}` : '';
+    const warn = out.format !== 'pdf' ? '' : (out.vector ? '<br>PDF vectoriel : tous les formats au bon ratio sont proposés.'
+      : `<br>Le PDF contient une photo de ${out.largestImage.width} × ${out.largestImage.height} px : seuls les formats imprimables en bonne qualité sont proposés.`)
+      + (out.pages > 1 ? ` Seule la page 1 sur ${out.pages} est utilisée.` : '');
     msg.innerHTML = `<div class="alert ok">« ${esc(f.title.value)} » est en ligne (${size}). Imprimable sur ${out.printable.length} formats sur ${total}.${warn}</div>`;
     f.reset(); document.getElementById('tagrows').innerHTML = ''; addTagRow(); loadArts();
   } catch (err) { msg.innerHTML = `<div class="alert err">${esc(err.message)}</div>`; }

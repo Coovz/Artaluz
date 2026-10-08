@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const bwipjs = require('bwip-js');
 const config = require('./config');
 const storage = require('./storage');
-const { isPdf, renderPdf } = require('./pdf');
+const { isPdf, pdfInfo, renderPdf } = require('./pdf');
 
 sharp.cache(false);
 sharp.concurrency(1); // limite la mémoire sur Railway (fichiers jusqu'à ~60 Mpx)
@@ -59,6 +59,14 @@ async function buildHdFile(orderNumber, lineIndex, line, originalBuffer) {
     const r = await renderPdf(originalBuffer, { width: wPx, height: hPx, fit: spec.fit });
     const want = spec.fit === 'cover' ? Math.max(wPx / r.width, hPx / r.height) : Math.min(wPx / r.width, hPx / r.height);
     effectiveDpi = Math.round(spec.dpi / Math.max(want, 1)); // < cible seulement si le garde-fou mémoire a réduit le rendu
+    // Photo intégrée au PDF : sa résolution une fois imprimée au format final
+    const info = await pdfInfo(originalBuffer);
+    if (info.rasterPpi) {
+      const pageIn = { w: info.widthPt / 72, h: info.heightPt / 72 };
+      const finalIn = { w: (size.w * 10 + 2 * spec.bleedMm) / 25.4, h: (size.h * 10 + 2 * spec.bleedMm) / 25.4 };
+      const k = spec.fit === 'cover' ? Math.max(finalIn.w / pageIn.w, finalIn.h / pageIn.h) : Math.min(finalIn.w / pageIn.w, finalIn.h / pageIn.h);
+      effectiveDpi = Math.min(effectiveDpi, Math.round(info.rasterPpi / k));
+    }
     input = sharp(r.data, { raw: { width: r.width, height: r.height, channels: r.channels }, limitInputPixels: false });
   } else {
     const raw = await sharp(originalBuffer, { limitInputPixels: false }).metadata();

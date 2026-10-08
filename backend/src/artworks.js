@@ -19,10 +19,19 @@ const slugify = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
 /** Contrôle d'un fichier source : format, dimensions, formats imprimables. */
 async function inspect(buffer) {
   if (isPdf(buffer)) {
-    const { widthPt, heightPt, pages } = await pdfInfo(buffer);
+    const { widthPt, heightPt, pages, rasterPpi, largestImage } = await pdfInfo(buffer);
+    const pageCm = { w: +(widthPt / 72 * 2.54).toFixed(1), h: +(heightPt / 72 * 2.54).toFixed(1) };
+    if (rasterPpi) {
+      // PDF contenant une photo : la définition réelle est celle de la photo, pas la taille de la page
+      const width = Math.round(widthPt / 72 * rasterPpi), height = Math.round(heightPt / 72 * rasterPpi);
+      if (Math.min(width, height) < 1000) {
+        throw new Error(`PDF refusé : il contient une image de seulement ${largestImage.width} × ${largestImage.height} px. `
+          + 'Agrandir la page du PDF n\'augmente pas la définition : exportez l\'image d\'origine en haute définition.');
+      }
+      return { width, height, format: 'pdf', pages, pageCm, rasterPpi: Math.round(rasterPpi), largestImage };
+    }
     const k = PDF_VIRTUAL_LONG_SIDE / Math.max(widthPt, heightPt);
-    return { width: Math.round(widthPt * k), height: Math.round(heightPt * k), format: 'pdf', pages,
-      pageCm: { w: +(widthPt / 72 * 2.54).toFixed(1), h: +(heightPt / 72 * 2.54).toFixed(1) } };
+    return { width: Math.round(widthPt * k), height: Math.round(heightPt * k), format: 'pdf', pages, pageCm, vector: true };
   }
   const meta = await sharp(buffer, { limitInputPixels: false }).metadata();
   if (!ACCEPTED.includes(meta.format)) throw new Error(`Format ${meta.format} refusé (PDF, JPEG, PNG, TIFF ou WebP)`);

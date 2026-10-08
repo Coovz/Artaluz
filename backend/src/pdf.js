@@ -16,8 +16,23 @@ async function pdfInfo(buffer) {
   if (doc.needsPassword && doc.needsPassword()) throw new Error('PDF protégé par mot de passe : envoyez une version sans protection');
   const pages = doc.countPages();
   if (!pages) throw new Error('PDF vide');
-  const [x0, y0, x1, y1] = doc.loadPage(0).getBounds();
-  return { widthPt: x1 - x0, heightPt: y1 - y0, pages };
+  const page = doc.loadPage(0);
+  const [x0, y0, x1, y1] = page.getBounds();
+  const widthPt = x1 - x0, heightPt = y1 - y0;
+  // Images (photos) intégrées : résolution réelle à la taille de la page.
+  // Seules comptent celles qui couvrent au moins 20 % de la page ; la plus faible l'emporte.
+  let rasterPpi = null, largestImage = null;
+  try {
+    page.toStructuredText('preserve-images').walk({
+      onImageBlock(bbox, transform, image) {
+        const wPt = bbox[2] - bbox[0], hPt = bbox[3] - bbox[1];
+        if (wPt <= 0 || hPt <= 0 || (wPt * hPt) / (widthPt * heightPt) < 0.2) return;
+        const ppi = Math.min(image.getWidth() / (wPt / 72), image.getHeight() / (hPt / 72));
+        if (rasterPpi === null || ppi < rasterPpi) { rasterPpi = ppi; largestImage = { width: image.getWidth(), height: image.getHeight() }; }
+      },
+    });
+  } catch { /* lecture des images impossible : le PDF est traité comme vectoriel */ }
+  return { widthPt, heightPt, pages, rasterPpi, largestImage };
 }
 
 /**
