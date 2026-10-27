@@ -20,17 +20,13 @@
         <path stroke-opacity=".22" d="M600 0V200M600 640V900M180 420H380M820 420H1020M303 123l142 142M755 575l142 142M897 123L755 265M445 575L303 717"/>
       </g>
     </svg>
+    <div class="showcase" id="carousel" role="region" aria-label="Nos créations, toutes traditions">
+      <div class="track" id="slides"><div class="slide-empty">Chargement des créations…</div></div>
+      <button class="arrow prev" type="button" id="prev" aria-label="Créations précédentes" hidden><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+      <button class="arrow next" type="button" id="next" aria-label="Créations suivantes" hidden><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+    </div>
     <div class="hero-inner">
-      <div class="carousel" id="carousel" role="region" aria-roledescription="carrousel" aria-label="Une création par tradition">
-        <div class="alcove"><div class="slides" id="slides"><div class="slide-empty">Chargement des créations…</div></div></div>
-        <div class="carousel-caption" aria-live="polite" id="caption"></div>
-        <div class="carousel-controls" id="controls" hidden>
-          <button class="arrow" type="button" id="prev" aria-label="Création précédente"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
-          <div class="dots" id="dots"></div>
-          <button class="arrow" type="button" id="next" aria-label="Création suivante"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
-        </div>
-      </div>
-      <div id="star" style="margin-top:22px"></div>
+      <div id="star" style="margin-top:30px"></div>
       <h1>Que chaque fête rayonne dans votre maison</h1>
       <p class="lead">L'art sacré de cinq traditions, imprimé à la commande dans notre atelier : bâches, stickers, magnets, posters et tableaux en aluminium.</p>
       <a class="btn" href="#traditions">Choisir ma tradition</a>
@@ -78,56 +74,49 @@ const SUPPORT_TEXT = {
 };
 
 // ---------------------------------------------------------------------------
-// Carrousel : au moins une création par tradition, dans l'ordre alphabétique
+// Vitrine : plusieurs créations visibles en entier, les traditions alternées
 // ---------------------------------------------------------------------------
 async function buildCarousel() {
-  const lists = await Promise.all(RELIGIONS.map(r => api(`/api/artworks?religion=${r.id}&limit=3`).catch(() => [])));
-  const slides = [];
-  const seen = new Set();
-  for (let round = 0; round < 2; round++) {          // 1re passe : une par tradition ; 2e passe : une de plus si disponible
+  const lists = await Promise.all(RELIGIONS.map(r => api(`/api/artworks?religion=${r.id}&limit=6`).catch(() => [])));
+  const slides = [], seen = new Set();
+  for (let round = 0; round < 6; round++) {           // tour à tour : une création par tradition, puis la suivante…
     RELIGIONS.forEach((r, i) => {
-      const a = lists[i].find(x => !seen.has(x.slug));
-      if (a && (round === 0 || slides.length < 10)) { seen.add(a.slug); slides.push({ ...a, rel: r }); }
+      const a = lists[i].filter(x => !seen.has(x.slug))[0];
+      if (a && slides.length < 20) { seen.add(a.slug); slides.push({ ...a, rel: r }); }
     });
   }
-  slides.sort((a, b) => RELIGIONS.indexOf(a.rel) - RELIGIONS.indexOf(b.rel));
-  const box = document.getElementById('slides');
-  if (!slides.length) { box.innerHTML = `<div class="slide-empty">Les premières créations arrivent très bientôt.</div>`; return; }
+  const track = document.getElementById('slides');
+  if (!slides.length) { track.innerHTML = `<div class="slide-empty">Les premières créations arrivent très bientôt.</div>`; return; }
 
-  box.innerHTML = slides.map((s, i) => `<a class="slide${i === 0 ? ' on' : ''}" href="/visuel/${encodeURIComponent(s.slug)}"
-      role="group" aria-roledescription="diapositive" aria-label="${i + 1} sur ${slides.length}" ${i ? 'tabindex="-1" aria-hidden="true"' : ''}>
-      <img src="${esc(s.preview)}" alt="${esc(s.title)} — ${esc(s.rel.name)}" ${i ? 'loading="lazy"' : ''}></a>`).join('');
-  const dots = document.getElementById('dots');
-  dots.innerHTML = slides.map((s, i) => `<button class="dot" type="button" style="--c:${RELIGION_COLORS[s.rel.id]}"
-      aria-label="${esc(s.rel.name)} : ${esc(s.title)}" aria-current="${i === 0}"><span></span></button>`).join('');
-  document.getElementById('controls').hidden = slides.length < 2;
+  track.innerHTML = slides.map((s, i) => `<a class="piece" href="/visuel/${encodeURIComponent(s.slug)}" style="--c:${RELIGION_COLORS[s.rel.id]}">
+      <span class="piece-frame"><img src="${esc(s.preview)}" alt="${esc(s.title)} — ${esc(s.rel.name)}"
+        width="${s.width_px || 3}" height="${s.height_px || 2}" style="aspect-ratio:${s.width_px || 3}/${s.height_px || 2}" ${i > 3 ? 'loading="lazy"' : ''}></span>
+      <span class="piece-cap"><span class="t">${esc(s.title)}</span><span class="r">${esc(s.rel.name)}</span></span></a>`).join('');
 
-  let cur = 0, timer = null, paused = false;
-  const caption = document.getElementById('caption');
-  const show = n => {
-    cur = (n + slides.length) % slides.length;
-    box.querySelectorAll('.slide').forEach((el, i) => {
-      el.classList.toggle('on', i === cur);
-      el.toggleAttribute('aria-hidden', i !== cur);
-      if (i === cur) el.removeAttribute('tabindex'); else el.setAttribute('tabindex', '-1');
-    });
-    dots.querySelectorAll('.dot').forEach((d, i) => d.setAttribute('aria-current', i === cur));
-    const s = slides[cur];
-    caption.innerHTML = `<div class="t">${esc(s.title)}</div><div class="r">${esc(s.rel.name)} · ${esc(s.artist)}</div>`;
+  const prev = document.getElementById('prev'), next = document.getElementById('next');
+  const step = dir => {
+    const pieces = [...track.children], mid = track.scrollLeft + track.clientWidth / 2;
+    const centers = pieces.map(p => p.offsetLeft + p.offsetWidth / 2);
+    let i = dir > 0 ? centers.findIndex(c => c > mid + 2) : centers.findLastIndex(c => c < mid - 2);
+    if (i < 0) i = dir > 0 ? 0 : pieces.length - 1;     // en bout de vitrine : on revient au début (ou à la fin)
+    track.scrollTo({ left: centers[i] - track.clientWidth / 2, behavior: 'smooth' });
   };
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const start = () => { stop(); if (!reduce && !paused && slides.length > 1) timer = setInterval(() => show(cur + 1), 5000); };
-  const stop = () => { clearInterval(timer); timer = null; };
-  show(0); start();
+  const update = () => { const scrollable = track.scrollWidth > track.clientWidth + 4; prev.hidden = next.hidden = !scrollable; };
+  update(); addEventListener('resize', update); track.querySelectorAll('img').forEach(im => im.addEventListener('load', update));
 
-  document.getElementById('prev').addEventListener('click', () => { show(cur - 1); start(); });
-  document.getElementById('next').addEventListener('click', () => { show(cur + 1); start(); });
-  dots.addEventListener('click', e => { const b = e.target.closest('.dot'); if (!b) return; show([...dots.children].indexOf(b)); start(); });
-  const car = document.getElementById('carousel');
-  car.addEventListener('mouseenter', () => { paused = true; stop(); });
-  car.addEventListener('mouseleave', () => { paused = false; start(); });
-  car.addEventListener('focusin', () => { paused = true; stop(); });
-  car.addEventListener('focusout', () => { paused = false; start(); });
+  let timer = null, paused = false;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const stop = () => { clearInterval(timer); timer = null; };
+  const start = () => { stop(); if (!reduce && !paused && !next.hidden) timer = setInterval(() => step(1), 4500); };
+  start();
+  prev.addEventListener('click', () => { step(-1); start(); });
+  next.addEventListener('click', () => { step(1); start(); });
+  const box = document.getElementById('carousel');
+  box.addEventListener('mouseenter', () => { paused = true; stop(); });
+  box.addEventListener('mouseleave', () => { paused = false; start(); });
+  box.addEventListener('focusin', () => { paused = true; stop(); });
+  box.addEventListener('focusout', () => { paused = false; start(); });
+  track.addEventListener('touchstart', () => { paused = true; stop(); }, { passive: true });
   document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
 }
 

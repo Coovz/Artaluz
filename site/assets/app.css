@@ -76,31 +76,37 @@ p { margin: 0 0 1em; max-width: 68ch; }
 .btn.block { width: 100%; }
 
 /* Accueil : auréole et carrousel en alcôve */
-.hero { position: relative; overflow: hidden; text-align: center; padding: 40px 16px 72px; }
+.hero { position: relative; overflow: hidden; text-align: center; padding: 36px 0 72px; }
+.hero-inner { padding-inline: 16px; }
 .hero .halo { position: absolute; left: 50%; top: -40px; transform: translateX(-50%); width: 1200px; max-width: none; height: auto; pointer-events: none; }
 .hero-inner { position: relative; display: flex; flex-direction: column; align-items: center; }
 .hero h1 { margin-top: 18px; max-width: 16ch; }
 .hero .lead { margin: 22px auto 0; max-width: 620px; color: var(--ink-soft); font-size: 1.12rem; }
 .hero .btn { margin-top: 30px; }
 
-.carousel { width: 320px; max-width: 82vw; }
-.alcove { border-radius: 160px 160px var(--radius) var(--radius); padding: 12px; background: var(--light); border: 1px solid var(--gold);
-  box-shadow: 0 0 0 10px var(--light), 0 0 0 11px var(--line); }
-.slides { position: relative; aspect-ratio: 3 / 4; border-radius: 148px 148px 2px 2px; overflow: hidden; background: var(--stone); }
-.slide { position: absolute; inset: 0; opacity: 0; transition: opacity .9s ease; display: block; }
-.slide.on { opacity: 1; z-index: 1; }
-.slide img { width: 100%; height: 100%; object-fit: cover; }
-.slide-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: var(--ink-soft); font-size: .95rem; }
-.carousel-caption { margin-top: 26px; min-height: 3.2em; }
-.carousel-caption .t { font-family: var(--display); font-size: 1.5rem; line-height: 1.15; }
-.carousel-caption .r { font-size: .9rem; color: var(--ink-soft); }
-.carousel-controls { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 12px; }
-.carousel-controls .arrow { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); cursor: pointer; display: grid; place-items: center; }
-.carousel-controls .arrow:hover { border-color: var(--gold); }
-.dots { display: flex; gap: 4px; }
-.dot { width: 28px; height: 44px; border: 0; background: none; cursor: pointer; display: grid; place-items: center; padding: 0; }
-.dot span { width: 12px; height: 12px; border-radius: 50%; background: var(--c, var(--gold)); opacity: .35; transition: opacity .2s, transform .2s; }
-.dot[aria-current="true"] span { opacity: 1; transform: scale(1.25); }
+/* Vitrine d'accueil : visuels entiers, même hauteur, défilement horizontal */
+.showcase { position: relative; width: 100%; }
+.track { display: flex; gap: 22px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
+  padding: 8px max(16px, calc((100vw - 1200px) / 2)) 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.track::-webkit-scrollbar { display: none; }
+.piece { flex: none; scroll-snap-align: center; display: flex; flex-direction: column; align-items: center; text-decoration: none; color: inherit; }
+.piece-frame { display: block; padding: 8px; background: var(--paper, #fff); border: 1px solid var(--gold);
+  box-shadow: 0 14px 34px -18px rgba(28, 42, 58, .45); transition: transform .3s ease, box-shadow .3s ease; }
+.piece:hover .piece-frame, .piece:focus-visible .piece-frame { transform: translateY(-4px); box-shadow: 0 22px 40px -18px rgba(28, 42, 58, .5); }
+.piece img { display: block; height: clamp(200px, 30vw, 360px); width: auto; max-width: min(78vw, 720px); object-fit: contain; background: var(--stone); }
+.piece-cap { margin-top: 12px; text-align: center; max-width: 34ch; }
+.piece-cap .t { display: block; font-family: var(--display); font-size: 1.15rem; line-height: 1.2; }
+.piece-cap .r { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--ink-soft); }
+.piece-cap .r::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--gold)); }
+.showcase .slide-empty { width: 100%; padding: 80px 16px; text-align: center; color: var(--ink-soft); }
+.showcase .arrow { position: absolute; top: calc(clamp(200px, 30vw, 360px) / 2 + 16px); transform: translateY(-50%); z-index: 2;
+  width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--gold); background: rgba(251, 250, 247, .92);
+  color: var(--ink); cursor: pointer; display: grid; place-items: center; }
+.showcase .arrow:hover { background: var(--light); box-shadow: 0 0 0 4px rgba(185, 139, 46, .15); }
+.showcase .prev { left: max(8px, calc((100vw - 1260px) / 2)); }
+.showcase .next { right: max(8px, calc((100vw - 1260px) / 2)); }
+.showcase .arrow[hidden] { display: none; }
+@media (max-width: 640px) { .showcase .arrow { display: none; } .track { gap: 14px; } }
 
 /* Traditions en médaillons, disposées en arc */
 .band { background: var(--stone); }
