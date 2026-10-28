@@ -40,10 +40,10 @@ async function inspect(buffer) {
   return { width, height, format: meta.format, space: meta.space, hasAlpha: meta.hasAlpha };
 }
 
-// Proportions : un visuel n'est proposé que dans les formats de même proportion (au sens près, ±2 %),
+// Proportions : un visuel n'est proposé que dans les formats de même proportion (à 0,5 % près),
 // pour ne jamais rogner l'image. Le format peut être tourné (40 × 60 ou 60 × 40).
 // Stickers et magnets : la taille est celle du plus grand côté, la forme suit le visuel (aucun rognage).
-const RATIO_TOLERANCE = 0.02;
+const RATIO_TOLERANCE = 0.005; // 0,5 % : écart d'arrondi seulement (ex. A3 29,7 × 42)
 const FREE_SHAPE = ['sticker', 'magnet'];
 const ratioOf = (a, b) => Math.max(a, b) / Math.min(a, b);
 const sameRatio = (wPx, hPx, wCm, hCm) => Math.abs(ratioOf(wPx, hPx) / ratioOf(wCm, hCm) - 1) <= RATIO_TOLERANCE;

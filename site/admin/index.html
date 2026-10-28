@@ -105,9 +105,9 @@ const STATUS = { pending: 'En attente de paiement', paid: 'Payée', in_productio
 const ART_STATUS = { en_attente: 'En attente', accepte: 'En ligne', a_corriger: 'À corriger', refuse: 'Refusé', retire: 'Retiré' };
 
 // ---------------------------------------------------------------------------
-// Proportions et formats (même règle que l'API : même proportion à ±2 %, pas de rognage)
+// Proportions et formats (même règle que l'API : même proportion à 0,5 % près, pas de rognage)
 // ---------------------------------------------------------------------------
-const TOL = 0.02, FREE = ['sticker', 'magnet'];
+const TOL = 0.005, FREE = ['sticker', 'magnet'];
 const DPI = { bache: 100, poster: 150, alu: 150, sticker: 150, magnet: 150 };
 const SUP = { alu: 'Tableau alu', poster: 'Poster', bache: 'Bâche', sticker: 'Sticker', magnet: 'Magnet' };
 const ratio = (a, b) => Math.max(a, b) / Math.min(a, b);

@@ -119,15 +119,8 @@ const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] 
     const frame = cat.finishes.find(f => sel.finishes.has(f.id) && /cadre/i.test(f.name));
     const pr = document.getElementById('print');
     pr.className = 'print' + (frame ? (/noir/i.test(frame.name) ? ' framed-noir' : ' framed-blanc') : '');
-    // Aperçu au ratio exact du format : la zone visible est celle qui sera imprimée
-    const artR = art.width_px / art.height_px;
-    let r = artR;
-    if (prod.support !== 'sticker' && prod.support !== 'magnet') {
-      const a = Number(prod.width_cm), b = Number(prod.height_cm);
-      r = landscape ? Math.max(a, b) / Math.min(a, b) : Math.min(a, b) / Math.max(a, b);
-    }
-    pr.style.setProperty('--r', r);
-    document.getElementById('dims').textContent += Math.abs(r - artR) > 0.02 ? ' — aperçu du cadrage imprimé' : '';
+    // Le visuel est toujours imprimé en entier : seuls les formats de même proportion sont proposés
+    pr.style.setProperty('--r', art.width_px / art.height_px);
   }
 
   document.getElementById('product').addEventListener('click', e => {
