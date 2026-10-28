@@ -26,6 +26,14 @@
   .bulk td select { width: 100%; min-width: 130px; }
   .st { font-size: .85rem; white-space: nowrap; }
   .st.ok { color: var(--ok); } .st.err { color: var(--danger); white-space: normal; min-width: 220px; } .st.run { color: var(--gold-deep); }
+  .fmt-help { margin: 0 0 14px; font-size: .88rem; }
+  .fmt-help summary { cursor: pointer; color: var(--gold-deep); font-weight: 600; }
+  .fmt-help table { margin-top: 10px; font-size: .85rem; }
+  .fmt-help td, .fmt-help th { padding: 6px 8px; }
+  .fmt-box { font-size: .85rem; margin: -6px 0 14px; padding: 10px 12px; border-radius: var(--radius); background: #F7F6F3; }
+  .fmt-box.warn { background: #FFF4E5; }
+  .fmt-line { font-size: .8rem; color: var(--ink-soft); }
+  .fmt-line.warn { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -48,6 +56,8 @@
       <form id="upload" class="panel">
         <h3 style="margin-bottom:14px">Ajouter un visuel</h3>
         <label class="field"><span>Fichier source : PDF HD, ou image JPEG, PNG, TIFF (1 000 px minimum)</span><input type="file" name="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/tiff,image/webp" required></label>
+        <div id="up-fmt" class="fmt-box" hidden aria-live="polite"></div>
+        <details class="fmt-help"><summary>Quelles proportions pour quels formats ?</summary><div data-fmt-help></div></details>
         <label class="field"><span>Titre</span><input name="title" required></label>
         <label class="field"><span>Description (facultatif)</span><textarea name="description" rows="3"></textarea></label>
         <span style="font-size:.88rem;display:block;margin-bottom:4px">Classement (une ligne par rattachement)</span>
@@ -65,6 +75,7 @@
         <h3 style="margin-bottom:8px">Importer plusieurs visuels d'un coup</h3>
         <p class="muted" style="margin-bottom:16px">Déposez vos fichiers (JPEG, PNG, TIFF ou PDF HD). Le classement est déduit du nom du fichier, par exemple
           <code>artaluz-ramadan-01-nuit-orientale-paysage.jpg</code> → fête « Ramadan », titre « Nuit orientale (paysage) ». Vérifiez et corrigez chaque ligne avant de lancer l'import.</p>
+        <details class="fmt-help"><summary>Quelles proportions pour quels formats ?</summary><div data-fmt-help></div></details>
         <label class="drop" id="drop"><input type="file" id="bulk-files" multiple accept="application/pdf,.pdf,image/jpeg,image/png,image/tiff,image/webp" class="sr-only">
           <strong>Glissez vos fichiers ici</strong><br><span class="muted">ou cliquez pour les choisir</span></label>
       </div>
@@ -93,6 +104,79 @@ const adm = (path, opts = {}) => api(path, { ...opts, headers: { 'X-Admin-Token'
 const STATUS = { pending: 'En attente de paiement', paid: 'Payée', in_production: 'En production', shipped: 'Expédiée', delivered: 'Livrée', cancelled: 'Annulée', refunded: 'Remboursée' };
 const ART_STATUS = { en_attente: 'En attente', accepte: 'En ligne', a_corriger: 'À corriger', refuse: 'Refusé', retire: 'Retiré' };
 
+// ---------------------------------------------------------------------------
+// Proportions et formats (même règle que l'API : même proportion à ±2 %, pas de rognage)
+// ---------------------------------------------------------------------------
+const TOL = 0.02, FREE = ['sticker', 'magnet'];
+const DPI = { bache: 100, poster: 150, alu: 150, sticker: 150, magnet: 150 };
+const SUP = { alu: 'Tableau alu', poster: 'Poster', bache: 'Bâche', sticker: 'Sticker', magnet: 'Magnet' };
+const ratio = (a, b) => Math.max(a, b) / Math.min(a, b);
+const cm = n => String(+Number(n).toFixed(1)).replace('.', ',');
+function ratioName(r) {
+  if (Math.abs(r - Math.SQRT2) < 0.005) return 'série A (1:1,41)';
+  for (let q = 1; q <= 30; q++) { const p = Math.round(r * q); if (Math.abs(p / q - r) / r < 0.005) return q === p ? 'carré 1:1' : `${q}:${p}`; }
+  return `1:${cm(r)}`;
+}
+/** Formats compatibles avec un visuel de w × h px (proportion, puis définition si on connaît les pixels). */
+function formatsFor(w, h, checkDpi = true) {
+  const r = ratio(w, h), land = w >= h, out = {};
+  for (const p of cat.products) {
+    const a = Number(p.width_cm), b = Number(p.height_cm);
+    if (!FREE.includes(p.support) && Math.abs(r / ratio(a, b) - 1) > TOL) continue;
+    if (checkDpi) {
+      const need = x => x / 2.54 * DPI[p.support] * 0.7;
+      if (Math.max(w, h) < need(Math.max(a, b)) || (!FREE.includes(p.support) && Math.min(w, h) < need(Math.min(a, b)))) continue;
+    }
+    const label = FREE.includes(p.support) ? `${cm(Math.max(a, b))} cm`
+      : p.format_label.startsWith('A') ? p.format_label
+      : land ? `${cm(Math.max(a, b))} × ${cm(Math.min(a, b))}` : `${cm(Math.min(a, b))} × ${cm(Math.max(a, b))}`;
+    (out[p.support] ||= new Set()).add(label);
+  }
+  return out;
+}
+const rigidCount = f => Object.entries(f).filter(([s]) => !FREE.includes(s)).reduce((n, [, v]) => n + v.size, 0);
+const fmtList = f => Object.keys(SUP).filter(s => f[s]).map(s => `<b>${SUP[s]}</b> ${[...f[s]].join(' · ')}`).join('<br>');
+function describe(w, h, label) {
+  const f = formatsFor(w, h), n = rigidCount(f), orient = w === h ? 'carré' : w > h ? 'paysage' : 'portrait';
+  const head = `${label || `${w.toLocaleString('fr-FR')} × ${h.toLocaleString('fr-FR')} px`} · proportion ${ratioName(ratio(w, h))} (${orient})`;
+  let why = '';
+  if (!n) {
+    const sameRatio = cat.products.filter(p => !FREE.includes(p.support) && Math.abs(ratio(w, h) / ratio(Number(p.width_cm), Number(p.height_cm)) - 1) <= TOL);
+    if (sameRatio.length) {
+      const need = Math.min(...sameRatio.map(p => Math.ceil(Math.max(p.width_cm, p.height_cm) / 2.54 * DPI[p.support] * 0.7)));
+      why = `<b>Définition insuffisante</b> pour les formats ${fmtList(formatsFor(w, h, false)).replace(/<br><b>(Sticker|Magnet)<\/b>[^<]*/g, '')} : il faut au moins ${need.toLocaleString('fr-FR')} px sur le grand côté. Agrandissez l'image (×2 à ×4).`;
+    } else why = '<b>Aucun format bâche, poster ou alu à cette proportion</b> : recadrez le fichier à une proportion du tableau « Quelles proportions… ».';
+  }
+  return { f, n, head, warn: n === 0, short: n ? `${n} formats bâche, poster ou alu` : sameRatioShort(w, h),
+    html: `${head}<br>${n ? `Formats proposés à la vente :<br>${fmtList(f)}` : `${why}<br>Seuls stickers et magnets seront proposés${f.sticker || f.magnet ? ` :<br>${fmtList(f)}` : '.'}`}` };
+}
+function sameRatioShort(w, h) {
+  return rigidCount(formatsFor(w, h, false)) ? 'définition trop faible pour bâche, poster ou alu : stickers et magnets seulement'
+    : 'aucun format bâche, poster ou alu à cette proportion : stickers et magnets seulement';
+}
+/** Dimensions d'une image en pixels (orientation EXIF comprise) ; null si le navigateur ne sait pas la lire (TIFF, PDF). */
+async function pixelSize(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return null;
+  try { const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); const d = { w: bmp.width, h: bmp.height }; bmp.close?.(); return d; }
+  catch { return null; }
+}
+function renderFormatHelp() {
+  const groups = [];
+  for (const p of cat.products.filter(p => !FREE.includes(p.support))) {
+    const r = ratio(Number(p.width_cm), Number(p.height_cm));
+    let g = groups.find(g => Math.abs(r / g.r - 1) <= TOL);
+    if (!g) groups.push(g = { r, by: {} });
+    const label = p.format_label.startsWith('A') ? p.format_label : `${cm(Math.min(p.width_cm, p.height_cm))} × ${cm(Math.max(p.width_cm, p.height_cm))}`;
+    (g.by[p.support] ||= new Set()).add(label);
+  }
+  groups.sort((a, b) => a.r - b.r);
+  const html = `<p class="muted" style="margin-top:8px">Un visuel n'est vendu que dans les formats de même proportion, pour ne jamais être rogné (le format peut être tourné : 40 × 60 ou 60 × 40).
+    Stickers et magnets épousent la forme du visuel : toutes proportions acceptées.</p>
+    <table><thead><tr><th>Proportion</th><th>Formats (cm)</th></tr></thead><tbody>${groups.map(g =>
+      `<tr><td style="white-space:nowrap">${ratioName(g.r)}</td><td>${fmtList(g.by)}</td></tr>`).join('')}</tbody></table>`;
+  document.querySelectorAll('[data-fmt-help]').forEach(el => el.innerHTML = html);
+}
+
 document.getElementById('login').addEventListener('submit', async e => {
   e.preventDefault(); token = document.getElementById('pw').value;
   try { await adm('/api/admin/orders'); try { sessionStorage.setItem(KEY, token); } catch {} start(); }
@@ -110,7 +194,7 @@ let cat;
 async function start() {
   document.getElementById('login').hidden = true; document.getElementById('app').hidden = false;
   cat = await catalog();
-  addTagRow(); loadArts(); loadOrders();
+  renderFormatHelp(); addTagRow(); loadArts(); loadOrders();
 }
 
 function addTagRow() {
@@ -128,6 +212,15 @@ function addTagRow() {
   fill(); document.getElementById('tagrows').append(row);
 }
 document.getElementById('addtag').addEventListener('click', addTagRow);
+document.querySelector('#upload [name=file]').addEventListener('change', async e => {
+  const box = document.getElementById('up-fmt'), file = e.target.files[0];
+  if (!file) { box.hidden = true; return; }
+  const d = await pixelSize(file);
+  box.hidden = false;
+  if (!d) { box.className = 'fmt-box'; box.innerHTML = 'Les dimensions de ce fichier (PDF ou TIFF) seront vérifiées à l\'envoi ; les formats proposés s\'afficheront ensuite.'; return; }
+  const x = describe(d.w, d.h);
+  box.className = 'fmt-box' + (x.warn ? ' warn' : ''); box.innerHTML = x.html;
+});
 
 document.getElementById('upload').addEventListener('submit', async e => {
   e.preventDefault();
@@ -137,13 +230,13 @@ document.getElementById('upload').addEventListener('submit', async e => {
   btn.disabled = true; btn.textContent = 'Envoi en cours…'; msg.innerHTML = '';
   try {
     const out = await adm('/api/admin/artworks', { method: 'POST', body: fd });
-    const total = cat.products.length;
     const size = out.format === 'pdf' ? `PDF, page ${String(out.pageCm.w).replace('.', ',')} × ${String(out.pageCm.h).replace('.', ',')} cm` : `${out.width} × ${out.height} px`;
     const warn = out.format !== 'pdf' ? '' : (out.vector ? '<br>PDF vectoriel : tous les formats au bon ratio sont proposés.'
       : `<br>Le PDF contient une photo de ${out.largestImage.width} × ${out.largestImage.height} px : seuls les formats imprimables en bonne qualité sont proposés.`)
       + (out.pages > 1 ? ` Seule la page 1 sur ${out.pages} est utilisée.` : '');
-    msg.innerHTML = `<div class="alert ok">« ${esc(f.title.value)} » est en ligne (${size}). Imprimable sur ${out.printable.length} formats sur ${total}.${warn}</div>`;
-    f.reset(); document.getElementById('tagrows').innerHTML = ''; addTagRow(); loadArts();
+    const x = describe(out.width, out.height, size);
+    msg.innerHTML = `<div class="alert ${x.warn ? 'err' : 'ok'}">« ${esc(f.title.value)} » est en ligne.${warn}<br>${x.html}</div>`;
+    f.reset(); document.getElementById('up-fmt').hidden = true; document.getElementById('tagrows').innerHTML = ''; addTagRow(); loadArts();
   } catch (err) { msg.innerHTML = `<div class="alert err">${esc(err.message)}</div>`; }
   btn.disabled = false; btn.textContent = 'Mettre en ligne';
 });
@@ -181,8 +274,18 @@ function guess(name) {
   return { title: cap(words || base) + orient, religion: rel, occasion: occ?.id || '', figure: fig?.id || '' };
 }
 function addFiles(files) {
-  for (const f of files) if (!bulk.some(b => b.file.name === f.name && b.file.size === f.size)) bulk.push({ file: f, ...guess(f.name), featured: false, state: 'pret', msg: '' });
+  for (const f of files) if (!bulk.some(b => b.file.name === f.name && b.file.size === f.size)) {
+    const b = { file: f, ...guess(f.name), featured: false, state: 'pret', msg: '', fmt: null };
+    bulk.push(b);
+    pixelSize(f).then(d => { b.fmt = d ? describe(d.w, d.h) : { pending: true }; renderBulk(); });
+  }
   renderBulk();
+}
+function fmtCell(b) {
+  if (!b.fmt) return '';
+  if (b.fmt.pending) return `<br><span class="fmt-line">Formats vérifiés à l'envoi</span>`;
+  const short = b.fmt.short;
+  return `<br><span class="fmt-line${b.fmt.warn ? ' warn' : ''}" title="${esc(b.fmt.html.replace(/<br>/g, '\n').replace(/<[^>]+>/g, ''))}">${esc(b.fmt.head)} · ${short}</span>`;
 }
 function opts(list, val, empty) { return `<option value="">${empty}</option>` + list.map(x => `<option value="${x.id}"${x.id === val ? ' selected' : ''}>${esc(x.name)}</option>`).join(''); }
 function renderBulk() {
@@ -191,7 +294,7 @@ function renderBulk() {
     const lock = b.state === 'ok' || b.state === 'run' ? ' disabled' : '';
     const st = { pret: '<span class="st">À importer</span>', run: '<span class="st run">Envoi…</span>', ok: `<span class="st ok">En ligne</span>`, err: `<span class="st err">${esc(b.msg)}</span>` }[b.state];
     return `<tr data-i="${i}">
-      <td><span title="${esc(b.file.name)}">${esc(b.file.name.length > 34 ? b.file.name.slice(0, 32) + '…' : b.file.name)}</span><br><span class="muted" style="font-size:.8rem">${(b.file.size / 1048576).toFixed(1)} Mo</span></td>
+      <td><span title="${esc(b.file.name)}">${esc(b.file.name.length > 34 ? b.file.name.slice(0, 32) + '…' : b.file.name)}</span><br><span class="muted" style="font-size:.8rem">${(b.file.size / 1048576).toFixed(1)} Mo</span>${fmtCell(b)}</td>
       <td><input type="text" data-k="title" value="${esc(b.title)}" aria-label="Titre"${lock}></td>
       <td><select data-k="religion" aria-label="Religion"${lock}>${opts(cat.religions, b.religion, 'À choisir')}</select></td>
       <td><select data-k="occasion" aria-label="Fête"${lock}>${opts(cat.occasions.filter(o => o.religion_id === b.religion), b.occasion, 'Aucune')}</select></td>
@@ -228,7 +331,7 @@ document.getElementById('bulk-go').addEventListener('click', async () => {
     const fd = new FormData();
     fd.append('file', b.file); fd.append('title', b.title.trim()); fd.append('featured', b.featured ? 'true' : 'false');
     fd.append('tags', JSON.stringify([{ religion: b.religion, occasion: b.occasion || null, figure: b.figure || null }]));
-    try { await adm('/api/admin/artworks', { method: 'POST', body: fd }); b.state = 'ok'; }
+    try { const out = await adm('/api/admin/artworks', { method: 'POST', body: fd }); b.state = 'ok'; b.fmt = describe(out.width, out.height, out.format === 'pdf' ? `PDF ${cm(out.pageCm.w)} × ${cm(out.pageCm.h)} cm` : null); }
     catch (err) { b.state = 'err'; b.msg = err.message; }
     renderBulk();
   }

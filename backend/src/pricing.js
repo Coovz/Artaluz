@@ -2,6 +2,7 @@
 // tout est relu dans la base (produits, finitions, codes promo).
 const db = require('./db');
 const config = require('./config');
+const { printableProducts } = require('./artworks');
 
 class CartError extends Error {}
 
@@ -34,6 +35,9 @@ async function priceCart(items, promoCode = null, email = null) {
          from products where ref = $1 and active and brand = $2`, [raw.productRef, config.brand]);
     if (!prod) throw new CartError(`Produit introuvable : ${raw.productRef}`);
     if (!art.supports.includes(prod.support)) throw new CartError(`Ce visuel n'est pas proposé en ${prod.variant}`);
+    if (!(await printableProducts(art.width_px, art.height_px)).includes(prod.ref)) {
+      throw new CartError(`Ce visuel n'est pas proposé dans le format ${prod.format_label} (proportions ou définition incompatibles)`);
+    }
     if (qty < prod.min_qty) {
       throw new CartError(`Minimum ${prod.min_qty} exemplaires pour ${prod.variant} ${prod.format_label}`);
     }

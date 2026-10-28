@@ -40,13 +40,22 @@ async function inspect(buffer) {
   return { width, height, format: meta.format, space: meta.space, hasAlpha: meta.hasAlpha };
 }
 
-/** Plus grand format imprimable sans descendre sous 70 % de la résolution cible, par support. */
+// Proportions : un visuel n'est proposé que dans les formats de même proportion (au sens près, ±2 %),
+// pour ne jamais rogner l'image. Le format peut être tourné (40 × 60 ou 60 × 40).
+// Stickers et magnets : la taille est celle du plus grand côté, la forme suit le visuel (aucun rognage).
+const RATIO_TOLERANCE = 0.02;
+const FREE_SHAPE = ['sticker', 'magnet'];
+const ratioOf = (a, b) => Math.max(a, b) / Math.min(a, b);
+const sameRatio = (wPx, hPx, wCm, hCm) => Math.abs(ratioOf(wPx, hPx) / ratioOf(wCm, hCm) - 1) <= RATIO_TOLERANCE;
+
+/** Formats proposés : même proportion que le visuel et au moins 70 % de la résolution cible. */
 async function printableProducts(widthPx, heightPx) {
   const { rows } = await db.query('select ref, support, width_cm, height_cm from products where active and brand = $1', [config.brand]);
   const ok = [];
   for (const p of rows) {
     const spec = PRINT_SPECS[p.support];
     const w = Number(p.width_cm), h = Number(p.height_cm);
+    if (!FREE_SHAPE.includes(p.support) && !sameRatio(widthPx, heightPx, w, h)) continue;
     const long = Math.max(widthPx, heightPx), short = Math.min(widthPx, heightPx);
     const needLong = Math.max(w, h) / 2.54 * spec.dpi * 0.7;
     const needShort = spec.fit === 'inside' ? 0 : Math.min(w, h) / 2.54 * spec.dpi * 0.7;
@@ -109,4 +118,4 @@ async function createArtwork({ artistId, title, description, buffer, originalNam
   return { id, slug, ...info, originalName, printable: await printableProducts(info.width, info.height) };
 }
 
-module.exports = { createArtwork, inspect, printableProducts, watermarkedPreview, slugify };
+module.exports = { createArtwork, inspect, printableProducts, sameRatio, RATIO_TOLERANCE, watermarkedPreview, slugify };
